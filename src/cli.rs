@@ -5,7 +5,7 @@ use crate::config::Config;
 use crate::server;
 use crate::util::{print_error};
 
-pub fn help() {
+fn help() {
     println!(
         "
     Core Commands
@@ -22,7 +22,7 @@ pub fn help() {
     );
 }
 
-pub fn help_e(message: &str) {
+fn help_e(message: &str) {
     print_error(message);
     help();
 }
