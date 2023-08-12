@@ -1,6 +1,5 @@
 use colored::Colorize;
-use std::error::Error;
-use std::io::{self, Write};
+use std::{error::Error, io::{self, Write}};
 
 use crate::config::Config;
 use crate::server;
