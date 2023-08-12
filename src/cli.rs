@@ -4,7 +4,7 @@ use std::io::{self, Write};
 
 use crate::config::Config;
 use crate::server;
-use crate::util::{print_error, print_success, print_warning};
+use crate::util::{print_error};
 
 pub fn help() {
     println!(
