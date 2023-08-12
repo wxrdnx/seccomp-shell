@@ -42,6 +42,9 @@ pub fn prompt(config: &mut Config) -> Result<(), Box<dyn Error>> {
         stdout_handle.flush()?;
 
         let bytes_read = stdin.read_line(&mut line)?;
+        if bytes_read == 0 {
+            break;
+        }
         let mut iter = line.trim().split_whitespace();
         if let Some(command) = iter.next() {
             if command == "help" {
