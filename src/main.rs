@@ -7,6 +7,7 @@ use config::Config;
 
 fn main() {
     let mut config = Config::new();
-    let mut line = String::new();
-    cli::prompt(&mut config);
+    if let Err(err) = cli::prompt(&mut config) {
+        eprintln!("Error: {} at {}:{}:{}", err, file!(), line!(), column!());
+    }
 }

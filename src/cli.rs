@@ -1,12 +1,14 @@
-use std::io::{self, Write};
-use std::error::Error;
 use colored::Colorize;
+use std::error::Error;
+use std::io::{self, Write};
 
-use crate::server;
 use crate::config::Config;
+use crate::server;
+use crate::util::{print_error, print_success, print_warning};
 
 pub fn help() {
-    println!("
+    println!(
+        "
     Core Commands
     =============
 
@@ -17,24 +19,29 @@ pub fn help() {
         configure     Shellcode configuration
         revshell      Start reverse shell
         exit          Exit program
-");
+"
+    );
 }
 
-pub fn prompt(config: &mut Config) {
+pub fn help_e(message: &str) {
+    print_error(message);
+    help();
+}
+
+pub fn prompt(config: &mut Config) -> Result<(), Box<dyn Error>> {
     let ps = ">".bold();
 
     let stdin = io::stdin();
     let stdout = io::stdout();
     let mut stdout_handle = stdout.lock();
-    let mut line = String::new();
-    
-    write!(stdout_handle, "{} ", ps)?;
-    stdout_handle.flush()?;
 
-    while let Ok(bytes_read) = stdin.read_line(&mut line) {
-        if bytes_read == 0 {
-            break;
-        }
+    loop {
+        let mut line = String::new();
+
+        write!(stdout_handle, "{} ", ps)?;
+        stdout_handle.flush()?;
+
+        let bytes_read = stdin.read_line(&mut line)?;
         let mut iter = line.trim().split_whitespace();
         if let Some(command) = iter.next() {
             if command == "help" {
@@ -42,10 +49,14 @@ pub fn prompt(config: &mut Config) {
             } else if command == "server" {
                 server::prompt(config);
             } else if command == "exit" {
-                return;
+                break;
+            } else {
+                let message = format!("Unknown command {}", command);
+                help_e(&message);
             }
         } else {
             help();
         }
     }
+    Ok(())
 }
