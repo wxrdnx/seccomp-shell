@@ -51,7 +51,7 @@ fn option_help(config: &mut Config) {
 }
 
 fn run(config: &mut Config) -> Result<(), Box<dyn Error>> {
-    if config.connected {
+    if config.connected || config.conn.is_some() {
         print_error("Server already connected");
         return Ok(());
     }
@@ -82,10 +82,12 @@ fn run(config: &mut Config) -> Result<(), Box<dyn Error>> {
     let waiting_connecion_msg = format!("Waiting for connection on {}", &server_sock_addr);
     print_info(&waiting_connecion_msg);
 
-    let (client, client_addr) = listener.accept()?;
-    let client_sock_addr = client_addr.to_string();
-    let connection_established_msg = format!("Connection established from {}", &client_sock_addr);
+    let (conn, conn_addr) = listener.accept()?;
+    let conn_sock_addr = conn_addr.to_string();
+    let connection_established_msg = format!("Connection established from {}", &conn_sock_addr);
     print_success(&connection_established_msg);
+
+    config.conn = Some(conn);
 
     Ok(())
 }

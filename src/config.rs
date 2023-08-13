@@ -1,4 +1,4 @@
-use std::net::{IpAddr, Ipv4Addr};
+use std::net::{IpAddr, Ipv4Addr, TcpStream};
 use syscalls::x86_64::Sysno;
 use std::fmt;
 
@@ -47,6 +47,7 @@ pub struct Config {
     pub server_host: Ipv4Addr,
     pub server_port: u16,
     pub sc_fmt: ScFmt,
+    pub conn: Option<TcpStream>,
     pub open_syscall: Syscall,
     pub read_syscall: Syscall,
     pub write_syscall: Syscall,
@@ -59,6 +60,7 @@ impl Config {
             server_host: Ipv4Addr::new(127, 0, 0, 1),
             server_port: 4444,
             sc_fmt: ScFmt::ScFmtQuoted,
+            conn: None,
             open_syscall: Syscall::new(Sysno::open),
             read_syscall: Syscall::new(Sysno::read),
             write_syscall: Syscall::new(Sysno::write),
