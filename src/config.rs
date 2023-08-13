@@ -2,7 +2,7 @@ use std::net::{IpAddr, Ipv4Addr};
 use syscalls::x86_64::Sysno;
 use std::fmt;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug)]
 pub enum ScFmt {
     ScFmtQuoted,
     ScFmtHex,
@@ -10,10 +10,12 @@ pub enum ScFmt {
 
 impl fmt::Display for ScFmt {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            ScFmt::ScFmtQuoted => write!(f, "quoted"),
-            ScFmt::ScFmtHex => write!(f, "hex"),
-        }
+        let text = match self {
+            ScFmt::ScFmtQuoted => "quoted",
+            ScFmt::ScFmtHex => "hex",
+            _ => "quoted",
+        };
+        text.fmt(f)
     }
 }
 
