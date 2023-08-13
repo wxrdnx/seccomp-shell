@@ -2,6 +2,7 @@ mod cli;
 mod config;
 mod server;
 mod util;
+mod shellcode;
 
 use config::Config;
 
