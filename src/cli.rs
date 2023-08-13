@@ -49,7 +49,7 @@ pub fn prompt(config: &mut Config) -> Result<(), Box<dyn Error>> {
             if command == "help" {
                 help();
             } else if command == "server" {
-                server::prompt(config);
+                server::prompt(config)?;
             } else if command == "exit" {
                 break;
             } else {
