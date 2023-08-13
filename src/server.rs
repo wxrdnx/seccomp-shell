@@ -62,7 +62,7 @@ fn run(config: &mut Config) -> Result<(), Box<dyn Error>> {
 
     print_success("Run the following shellcode on the victim server:");
 
-    let read_receiver = match config.open_syscall {
+    let read_receiver = match config.open_syscall.sysno {
         Sysno::read => SYS_READ_RECEIVER,
         Sysno::recvfrom => SYS_RECVFROM_RECEIVER,
         _ => SYS_READ_RECEIVER,

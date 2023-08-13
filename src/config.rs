@@ -20,26 +20,48 @@ impl fmt::Display for ScFmt {
 }
 
 #[derive(Debug)]
+pub struct Syscall {
+    pub sysno: Sysno,
+}
+
+impl Syscall {
+    pub fn new(sysno: Sysno) -> Self {
+        Self { sysno }
+    }
+}
+
+impl fmt::Display for Syscall {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let text = match self.sysno {
+            Sysno::read => "SYS_read",
+            Sysno::recvfrom => "SYS_recvfrom",
+            _ => "SYS_read",
+        };
+        text.fmt(f)
+    }
+}
+
+#[derive(Debug)]
 pub struct Config {
     pub connected: bool,
     pub server_host: Ipv4Addr,
     pub server_port: u16,
     pub sc_fmt: ScFmt,
-    pub open_syscall: Sysno,
-    pub read_syscall: Sysno,
-    pub write_syscall: Sysno,
+    pub open_syscall: Syscall,
+    pub read_syscall: Syscall,
+    pub write_syscall: Syscall,
 }
 
 impl Config {
     pub fn new() -> Self {
-        Config {
+        Self {
             connected: false,
             server_host: Ipv4Addr::new(127, 0, 0, 1),
             server_port: 4444,
             sc_fmt: ScFmt::ScFmtQuoted,
-            open_syscall: Sysno::open,
-            read_syscall: Sysno::read,
-            write_syscall: Sysno::write,
+            open_syscall: Syscall::new(Sysno::open),
+            read_syscall: Syscall::new(Sysno::read),
+            write_syscall: Syscall::new(Sysno::write),
         }
     }
 }
