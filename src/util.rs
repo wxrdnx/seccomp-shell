@@ -25,13 +25,14 @@ pub fn print_error(message: &str) {
 pub fn print_shellcode_quoted(shellcode: &[u8]) {
     print!("\"");
     for byte in shellcode.iter() {
-        print!("\\{:02x}", byte);
+        print!("\\x{:02x}", byte);
     }
-    print!("\"");
+    println!("\"");
 }
 
 pub fn print_shellcode_hex(shellcode: &[u8]) {
     for byte in shellcode.iter() {
         print!("{:02x}", byte);
     }
+    println!("");
 }

