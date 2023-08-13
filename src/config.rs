@@ -20,7 +20,7 @@ impl fmt::Display for ScFmt {
 #[derive(Debug)]
 pub struct Config {
     pub connected: bool,
-    pub server_host: IpAddr,
+    pub server_host: Ipv4Addr,
     pub server_port: u16,
     pub sc_fmt: ScFmt,
     pub open_syscall: Sysno,
@@ -32,7 +32,7 @@ impl Config {
     pub fn new() -> Self {
         Config {
             connected: false,
-            server_host: IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
+            server_host: Ipv4Addr::new(127, 0, 0, 1),
             server_port: 4444,
             sc_fmt: ScFmt::ScFmtQuoted,
             open_syscall: Sysno::open,
@@ -40,4 +40,11 @@ impl Config {
             write_syscall: Sysno::write,
         }
     }
+}
+
+pub struct Receiver {
+    pub shellcode: &'static [u8],
+    pub shellcode_len: usize,
+    pub host_index: usize,
+    pub port_index: usize,
 }
