@@ -52,6 +52,8 @@ pub fn prompt(config: &mut Config) -> Result<(), Box<dyn Error>> {
                 server::prompt(config)?;
             } else if command == "exit" {
                 break;
+            } else if command == "back" {
+                continue;
             } else {
                 let message = format!("Unknown command {}", command);
                 help_e(&message);
