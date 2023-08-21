@@ -1,7 +1,5 @@
 use colored::Colorize;
 
-use crate::config::ScFmt;
-
 pub fn print_info(message: &str) {
     let output = format!("[{}] {}", "*".blue(), message);
     eprintln!("{}", output);
