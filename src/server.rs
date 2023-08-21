@@ -108,10 +108,10 @@ fn set(config: &mut Config, option: &str, value: &str) {
         print_success(&success_message);
     } else if option == "read_syscall" {
         match value {
-            "SYS_read" | "read" | "0" | "0x0" => {
+            "SYS_read" | "read" => {
                 config.read_syscall = syscall::SYS_READ;
             },
-            "SYS_recvfrom" | "recvfrom" | "45" | "0x2d" | "0x2D" => {
+            "SYS_recvfrom" | "recvfrom" => {
                 config.read_syscall = syscall::SYS_RECVFROM;
             },
             _ => {
@@ -154,7 +154,6 @@ fn run(config: &mut Config) -> Result<(), Box<dyn Error>> {
     match config.sc_fmt {
         ScFmt::ScFmtQuoted => print_shellcode_quoted(&read_shellcode),
         ScFmt::ScFmtHex => print_shellcode_hex(&read_shellcode),
-        _ => print_shellcode_quoted(&read_shellcode),
     }
 
     let waiting_connecion_msg = format!("Waiting for connection on {}", &server_sock_addr);

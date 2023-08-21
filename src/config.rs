@@ -1,4 +1,4 @@
-use std::net::{IpAddr, Ipv4Addr, TcpStream};
+use std::net::{Ipv4Addr, TcpStream};
 use syscalls::x86_64::Sysno;
 use std::fmt;
 
@@ -15,7 +15,6 @@ impl fmt::Display for ScFmt {
         let text = match self {
             ScFmt::ScFmtQuoted => "quoted",
             ScFmt::ScFmtHex => "hex",
-            _ => "quoted",
         };
         text.fmt(f)
     }
