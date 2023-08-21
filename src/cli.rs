@@ -22,11 +22,6 @@ fn help() {
     );
 }
 
-fn help_e(message: &str) {
-    print_error(message);
-    help();
-}
-
 pub fn prompt(config: &mut Config) -> Result<(), Box<dyn Error>> {
     let ps = ">".bold();
 
@@ -56,7 +51,8 @@ pub fn prompt(config: &mut Config) -> Result<(), Box<dyn Error>> {
                 continue;
             } else {
                 let message = format!("Unknown command {}", command);
-                help_e(&message);
+                print_error(&message);
+                help();
             }
         } else {
             help();
