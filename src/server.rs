@@ -63,7 +63,7 @@ fn set(config: &mut Config, option: &str, value: &str) {
                     if let IpAddr::V4(ipv4_addr) = ip {
                         config.server_host = ipv4_addr;
                         found = true;
-                        let success_message = format!("Host set to {}", ipv4_addr.to_string());
+                        let success_message = format!("Host set to '{}'", ipv4_addr.to_string());
                         print_success(&success_message);
                         break;
                     }
@@ -76,10 +76,20 @@ fn set(config: &mut Config, option: &str, value: &str) {
             Err(err) => {
                 let error_message= format!("Error reaching host '{}': {}", value, err.to_string());
                 print_error(&error_message);
-            }
+            },
         }
     } else if option == "port" {
-
+        match value.parse::<u16>() {
+            Ok(port) => {
+                config.server_port = port;
+                let success_message = format!("Port set to '{}'", port);
+                print_success(&success_message);
+            },
+            Err(_) => {
+                let error_message= format!("Error: invalid port '{}'", value);
+                print_error(&error_message);
+            },
+        }
     } else if option == "format" {
 
     } else if option == "read_syscall" {
