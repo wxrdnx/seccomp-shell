@@ -1,6 +1,6 @@
 use colored::Colorize;
 use syscalls::Sysno;
-use std::{error::Error, io::{self, Write}, net::TcpListener};
+use std::{error::Error, io::{self, Write}, net::{TcpListener, SocketAddr, ToSocketAddrs, IpAddr}};
 
 use crate::{config::{Config, ScFmt}, util::{print_shellcode_quoted, print_shellcode_hex, print_info}, shellcode::{SYS_READ_RECEIVER, SYS_RECVFROM_RECEIVER}};
 use crate::util::{print_success, print_warning, print_error};
@@ -48,6 +48,46 @@ fn option_help(config: &mut Config) {
         quoted        \"\\xde\\xad\\xbe\\xef\"
         hex           deadbeef
 ", config.server_host, config.server_port, config.sc_fmt, config.read_syscall);
+}
+
+fn set(config: &mut Config, option: &str, value: &str) {
+    if option == "host" {
+        let server_sock_addr = format!("{}:{}", value, config.server_port);
+        let addrs_iter = server_sock_addr.to_socket_addrs();
+        match addrs_iter {
+            Ok(iter) => {
+                let mut found = false;
+                // If there are multiple IPs, just pick the first ipv4
+                for server_socket_addr in iter {
+                    let ip = server_socket_addr.ip();
+                    if let IpAddr::V4(ipv4_addr) = ip {
+                        config.server_host = ipv4_addr;
+                        found = true;
+                        let success_message = format!("Host set to {}", ipv4_addr.to_string());
+                        print_success(&success_message);
+                        break;
+                    }
+                }
+                if !found {
+                    let error_message= format!("Error: no ip matched to {}", value);
+                    print_error(&error_message);
+                }
+            },
+            Err(err) => {
+                let error_message= format!("Error reaching host '{}': {}", value, err.to_string());
+                print_error(&error_message);
+            }
+        }
+    } else if option == "port" {
+
+    } else if option == "format" {
+
+    } else if option == "read_syscall" {
+
+    } else {
+        let message = format!("Invalid option '{}'", option);
+        print_error(&message);
+    }
 }
 
 fn run(config: &mut Config) -> Result<(), Box<dyn Error>> {
@@ -118,8 +158,24 @@ pub fn prompt(config: &mut Config) -> Result<(), Box<dyn Error>> {
                 help();
             } else if command == "options" {
                 option_help(config);
+            } else if command == "set" {
+                if let Some(option) = iter.next() {
+                    if let Some(value) = iter.next() {
+                        set(config, option, value);
+                    } else {
+                        print_error("No value specified");
+                        help();
+                    }
+                } else {
+                    print_error("No option specified");
+                    help();
+                }
             } else if command == "run" {
                 run(config)?;
+            } else {
+                let message = format!("Unknown command {}", command);
+                print_error(&message);
+                help();
             }
         } else {
             help();
