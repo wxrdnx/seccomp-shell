@@ -3,6 +3,7 @@ mod config;
 mod server;
 mod util;
 mod shellcode;
+mod syscall;
 
 use config::Config;
 

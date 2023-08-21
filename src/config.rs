@@ -2,6 +2,8 @@ use std::net::{IpAddr, Ipv4Addr, TcpStream};
 use syscalls::x86_64::Sysno;
 use std::fmt;
 
+use crate::syscall::SYS_READ;
+
 #[derive(Debug)]
 pub enum ScFmt {
     ScFmtQuoted,
@@ -62,7 +64,7 @@ impl Config {
             sc_fmt: ScFmt::ScFmtQuoted,
             conn: None,
             open_syscall: Syscall::new(Sysno::open),
-            read_syscall: Syscall::new(Sysno::read),
+            read_syscall: SYS_READ,
             write_syscall: Syscall::new(Sysno::write),
         }
     }
