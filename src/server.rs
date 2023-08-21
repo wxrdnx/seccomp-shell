@@ -1,8 +1,8 @@
 use colored::Colorize;
 use syscalls::Sysno;
-use std::{error::Error, io::{self, Write}, net::{TcpListener, SocketAddr, ToSocketAddrs, IpAddr}};
+use std::{error::Error, io::{self, Write}, net::{TcpListener, ToSocketAddrs, IpAddr}};
 
-use crate::{config::{Config, ScFmt}, util::{print_shellcode_quoted, print_shellcode_hex, print_info}, shellcode::{SYS_READ_RECEIVER, SYS_RECVFROM_RECEIVER}};
+use crate::{config::{Config, ScFmt}, util::{print_shellcode_quoted, print_shellcode_hex, print_info}, shellcode::{SYS_READ_RECEIVER, SYS_RECVFROM_RECEIVER}, syscall};
 use crate::util::{print_success, print_warning, print_error};
 
 fn help() {
@@ -107,7 +107,21 @@ fn set(config: &mut Config, option: &str, value: &str) {
         let success_message = format!("Format set to '{}'", config.sc_fmt);
         print_success(&success_message);
     } else if option == "read_syscall" {
-
+        match value {
+            "SYS_read" | "read" | "0" | "0x0" => {
+                config.read_syscall = syscall::SYS_READ;
+            },
+            "SYS_recvfrom" | "recvfrom" | "45" | "0x2d" | "0x2D" => {
+                config.read_syscall = syscall::SYS_RECVFROM;
+            },
+            _ => {
+                let error_message= format!("Error: invalid syscall '{}'", value);
+                print_error(&error_message);
+                return;
+            },
+        }
+        let success_message = format!("Format set to '{}'", config.read_syscall);
+        print_success(&success_message);
     } else {
         let message = format!("Invalid option '{}'", option);
         print_error(&message);
