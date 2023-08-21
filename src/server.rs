@@ -63,7 +63,7 @@ fn set(config: &mut Config, option: &str, value: &str) {
                     if let IpAddr::V4(ipv4_addr) = ip {
                         config.server_host = ipv4_addr;
                         found = true;
-                        let success_message = format!("Host set to '{}'", ipv4_addr.to_string());
+                        let success_message = format!("Host set to '{}'", config.server_host.to_string());
                         print_success(&success_message);
                         break;
                     }
@@ -82,7 +82,7 @@ fn set(config: &mut Config, option: &str, value: &str) {
         match value.parse::<u16>() {
             Ok(port) => {
                 config.server_port = port;
-                let success_message = format!("Port set to '{}'", port);
+                let success_message = format!("Port set to '{}'", config.server_port);
                 print_success(&success_message);
             },
             Err(_) => {
@@ -91,7 +91,21 @@ fn set(config: &mut Config, option: &str, value: &str) {
             },
         }
     } else if option == "format" {
-
+        match value {
+            "quoted" => {
+                config.sc_fmt = ScFmt::ScFmtQuoted;
+            },
+            "hex" => {
+                config.sc_fmt = ScFmt::ScFmtHex;
+            },
+            _ => {
+                let error_message= format!("Error: invalid format '{}'", value);
+                print_error(&error_message);
+                return;
+            }
+        }
+        let success_message = format!("Format set to '{}'", config.sc_fmt);
+        print_success(&success_message);
     } else if option == "read_syscall" {
 
     } else {
