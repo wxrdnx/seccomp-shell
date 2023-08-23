@@ -1,22 +1,22 @@
 use colored::Colorize;
 
 pub fn print_info(message: &str) {
-    let output = format!("[{}] {}", "*".blue(), message.blue());
+    let output = format!("[{}] {}", "*".blue(), message.blue().bold());
     eprintln!("{}", output);
 }
 
 pub fn print_success(message: &str) {
-    let output = format!("[{}] {}", "+".green(), message.green());
+    let output = format!("[{}] {}", "+".green(), message.green().bold());
     println!("{}", output);
 }
 
 pub fn print_warning(message: &str) {
-    let output = format!("[{}] {}", "!".yellow(), message.yellow());
+    let output = format!("[{}] {}", "!".yellow(), message.yellow().bold());
     println!("{}", output);
 }
 
 pub fn print_error(message: &str) {
-    let output = format!("[{}] {}", "-".red(), message.red());
+    let output = format!("[{}] {}", "-".red(), message.red().bold());
     eprintln!("{}", output);
 }
 
