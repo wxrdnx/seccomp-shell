@@ -51,80 +51,86 @@ fn option_help(config: &mut Config) {
 }
 
 fn set(config: &mut Config, option: &str, value: &str) {
-    if option == "host" {
-        let server_sock_addr = format!("{}:{}", value, config.server_port);
-        let addrs_iter = server_sock_addr.to_socket_addrs();
-        match addrs_iter {
-            Ok(iter) => {
-                let mut found = false;
-                // If there are multiple IPs, just pick the first ipv4
-                for server_socket_addr in iter {
-                    let ip = server_socket_addr.ip();
-                    if let IpAddr::V4(ipv4_addr) = ip {
-                        config.server_host = ipv4_addr;
-                        found = true;
-                        let success_message = format!("Host set to '{}'", config.server_host.to_string());
-                        print_success(&success_message);
-                        break;
+    match option {
+        "host" => {
+            let server_sock_addr = format!("{}:{}", value, config.server_port);
+            let addrs_iter = server_sock_addr.to_socket_addrs();
+            match addrs_iter {
+                Ok(iter) => {
+                    let mut found = false;
+                    // If there are multiple IPs, just pick the first ipv4
+                    for server_socket_addr in iter {
+                        let ip = server_socket_addr.ip();
+                        if let IpAddr::V4(ipv4_addr) = ip {
+                            config.server_host = ipv4_addr;
+                            found = true;
+                            let success_message = format!("Host set to '{}'", config.server_host.to_string());
+                            print_success(&success_message);
+                            break;
+                        }
                     }
-                }
-                if !found {
-                    let error_message= format!("Error: no ip matched to {}", value);
+                    if !found {
+                        let error_message= format!("Error: no ip matched to {}", value);
+                        print_error(&error_message);
+                    }
+                },
+                Err(err) => {
+                    let error_message= format!("Error reaching host '{}': {}", value, err.to_string());
                     print_error(&error_message);
-                }
-            },
-            Err(err) => {
-                let error_message= format!("Error reaching host '{}': {}", value, err.to_string());
-                print_error(&error_message);
-            },
-        }
-    } else if option == "port" {
-        match value.parse::<u16>() {
-            Ok(port) => {
-                config.server_port = port;
-                let success_message = format!("Port set to '{}'", config.server_port);
-                print_success(&success_message);
-            },
-            Err(_) => {
-                let error_message= format!("Error: invalid port '{}'", value);
-                print_error(&error_message);
-            },
-        }
-    } else if option == "format" {
-        match value {
-            "quoted" => {
-                config.sc_fmt = ScFmt::ScFmtQuoted;
-            },
-            "hex" => {
-                config.sc_fmt = ScFmt::ScFmtHex;
-            },
-            _ => {
-                let error_message= format!("Error: invalid format '{}'", value);
-                print_error(&error_message);
-                return;
+                },
             }
+        },
+        "port" => {
+            match value.parse::<u16>() {
+                Ok(port) => {
+                    config.server_port = port;
+                    let success_message = format!("Port set to '{}'", config.server_port);
+                    print_success(&success_message);
+                },
+                Err(_) => {
+                    let error_message= format!("Error: invalid port '{}'", value);
+                    print_error(&error_message);
+                },
+            }
+        },
+        "format" => {
+            match value {
+                "quoted" => {
+                    config.sc_fmt = ScFmt::ScFmtQuoted;
+                },
+                "hex" => {
+                    config.sc_fmt = ScFmt::ScFmtHex;
+                },
+                _ => {
+                    let error_message= format!("Error: invalid format '{}'", value);
+                    print_error(&error_message);
+                    return;
+                }
+            }
+            let success_message = format!("Format set to '{}'", config.sc_fmt);
+            print_success(&success_message);
+        },
+        "read_syscall" => {
+            match value {
+                "SYS_read" | "read" => {
+                    config.read_syscall = syscall::SYS_READ;
+                },
+                "SYS_recvfrom" | "recvfrom" => {
+                    config.read_syscall = syscall::SYS_RECVFROM;
+                },
+                _ => {
+                    let error_message= format!("Error: invalid syscall '{}'", value);
+                    print_error(&error_message);
+                    return;
+                },
+            }
+            let success_message = format!("Format set to '{}'", config.read_syscall);
+            print_success(&success_message);
+        },
+        _ => {
+            let message = format!("Invalid option '{}'", option);
+            print_error(&message);
         }
-        let success_message = format!("Format set to '{}'", config.sc_fmt);
-        print_success(&success_message);
-    } else if option == "read_syscall" {
-        match value {
-            "SYS_read" | "read" => {
-                config.read_syscall = syscall::SYS_READ;
-            },
-            "SYS_recvfrom" | "recvfrom" => {
-                config.read_syscall = syscall::SYS_RECVFROM;
-            },
-            _ => {
-                let error_message= format!("Error: invalid syscall '{}'", value);
-                print_error(&error_message);
-                return;
-            },
-        }
-        let success_message = format!("Format set to '{}'", config.read_syscall);
-        print_success(&success_message);
-    } else {
-        let message = format!("Invalid option '{}'", option);
-        print_error(&message);
     }
 }
 
