@@ -1,7 +1,7 @@
 use colored::Colorize;
 use std::{error::Error, io::{self, Write}};
 
-use crate::config::Config;
+use crate::{config::Config, shell};
 use crate::server;
 use crate::util::{print_error};
 
@@ -15,8 +15,7 @@ fn help() {
         -------       -----------
         help          Help menu
         server        Establish C&C server
-        configure     Shellcode configuration
-        revshell      Start reverse shell
+        shell         Start reverse shell
         exit          Exit program
 "
     );
@@ -41,19 +40,32 @@ pub fn prompt(config: &mut Config) -> Result<(), Box<dyn Error>> {
         }
         let mut iter = line.trim().split_whitespace();
         if let Some(command) = iter.next() {
-            if command == "help" {
-                help();
-            } else if command == "server" {
-                server::prompt(config)?;
-            } else if command == "exit" {
-                break;
-            } else if command == "back" {
-                continue;
-            } else {
-                let message = format!("Unknown command {}", command);
-                print_error(&message);
-                help();
-            }
+            match command {
+                "help" => {
+                    help();
+                },
+                "server" => {
+                    server::prompt(config)?;
+                },
+                "shell" => {
+                    if !config.connected {
+                        print_error("Server not connected");
+                    } else {
+                        shell::prompt(config)?;
+                    }
+                },
+                "back" => {
+                    continue;
+                },
+                "exit" => {
+                    break;
+                },
+                _ => {
+                    let message = format!("Unknown command {}", command);
+                    print_error(&message);
+                    help();
+                },
+            };
         } else {
             help();
         }

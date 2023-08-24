@@ -191,29 +191,38 @@ pub fn prompt(config: &mut Config) -> Result<(), Box<dyn Error>> {
         }
         let mut iter = line.trim().split_whitespace();
         if let Some(command) = iter.next() {
-            if command == "help" {
-                help();
-            } else if command == "options" {
-                option_help(config);
-            } else if command == "set" {
-                if let Some(option) = iter.next() {
-                    if let Some(value) = iter.next() {
-                        set(config, option, value);
+            match command {
+                "help" => {
+                    help();
+                },
+                "options" => {
+                    option_help(config);
+                },
+                "set" => {
+                    if let Some(option) = iter.next() {
+                        if let Some(value) = iter.next() {
+                            set(config, option, value);
+                        } else {
+                            print_error("No value specified");
+                            help();
+                        }
                     } else {
-                        print_error("No value specified");
+                        print_error("No option specified");
                         help();
                     }
-                } else {
-                    print_error("No option specified");
+                },
+                "run" => {
+                    run(config)?;
+                },
+                "back" => {
+                    break;
+                },
+                _ => {
+                    let message = format!("Unknown command {}", command);
+                    print_error(&message);
                     help();
                 }
-            } else if command == "run" {
-                run(config)?;
-            } else {
-                let message = format!("Unknown command {}", command);
-                print_error(&message);
-                help();
-            }
+            };
         } else {
             help();
         }

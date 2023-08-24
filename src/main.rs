@@ -1,6 +1,7 @@
 mod cli;
 mod config;
 mod server;
+mod shell;
 mod util;
 mod shellcode;
 mod syscall;
