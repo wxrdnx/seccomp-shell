@@ -14,8 +14,8 @@ fn help() {
         Command       Description
         -------       -----------
         help          Help menu
+        config        Configure Enabled Syscalls
         server        Establish C&C server
-        shell         Start reverse shell
         exit          Exit program
 "
     );
@@ -48,7 +48,7 @@ pub fn prompt(config: &mut Config) -> Result<(), Box<dyn Error>> {
                     server::prompt(config)?;
                 },
                 "shell" => {
-                    if !config.connected {
+                    if !config.conn.is_none() {
                         print_error("Server not connected");
                     } else {
                         shell::prompt(config)?;

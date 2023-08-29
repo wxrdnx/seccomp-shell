@@ -2,7 +2,7 @@ use colored::Colorize;
 use syscalls::Sysno;
 use std::{error::Error, io::{self, Write}, net::{TcpListener, ToSocketAddrs, IpAddr}};
 
-use crate::{config::{Config, ScFmt}, util::{print_shellcode_quoted, print_shellcode_hex, print_info}, shellcode::{SYS_READ_RECEIVER, SYS_RECVFROM_RECEIVER}, syscall};
+use crate::{config::{Config, ScFmt}, util::{print_shellcode_quoted, print_shellcode_hex, print_info}, shellcode::{SYS_READ_RECEIVER, SYS_RECVFROM_RECEIVER}, syscall, shell};
 use crate::util::{print_success, print_warning, print_error};
 
 fn help() {
@@ -135,7 +135,7 @@ fn set(config: &mut Config, option: &str, value: &str) {
 }
 
 fn run(config: &mut Config) -> Result<(), Box<dyn Error>> {
-    if config.connected || config.conn.is_some() {
+    if config.conn.is_some() {
         print_error("Server already connected");
         return Ok(());
     }
@@ -171,6 +171,8 @@ fn run(config: &mut Config) -> Result<(), Box<dyn Error>> {
     print_success(&connection_established_msg);
 
     config.conn = Some(conn);
+
+    shell::prompt(config)?;
 
     Ok(())
 }
