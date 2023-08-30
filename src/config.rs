@@ -44,7 +44,6 @@ impl fmt::Display for Syscall {
 
 #[derive(Debug)]
 pub struct Config {
-    pub connected: bool,
     pub server_host: Ipv4Addr,
     pub server_port: u16,
     pub sc_fmt: ScFmt,
@@ -57,7 +56,6 @@ pub struct Config {
 impl Config {
     pub fn new() -> Self {
         Self {
-            connected: false,
             server_host: Ipv4Addr::new(127, 0, 0, 1),
             server_port: 4444,
             sc_fmt: ScFmt::ScFmtQuoted,
@@ -74,4 +72,9 @@ pub struct Receiver {
     pub shellcode_len: usize,
     pub host_index: usize,
     pub port_index: usize,
+}
+
+pub struct DirInjector {
+    pub shellcode: &'static [u8],
+    pub shellcode_len: usize,
 }
