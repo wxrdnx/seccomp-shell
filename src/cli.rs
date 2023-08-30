@@ -70,5 +70,7 @@ pub fn prompt(config: &mut Config) -> Result<(), Box<dyn Error>> {
             help();
         }
     }
+
+    println!("");
     Ok(())
 }

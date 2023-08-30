@@ -136,8 +136,7 @@ fn set(config: &mut Config, option: &str, value: &str) {
 
 fn run(config: &mut Config) -> Result<(), Box<dyn Error>> {
     if config.conn.is_some() {
-        print_error("Server already connected");
-        return Ok(());
+        return Err("Server already connected".into());
     }
 
     let server_sock_addr = format!("{}:{}", config.server_host.to_string(), config.server_port);
@@ -174,6 +173,7 @@ fn run(config: &mut Config) -> Result<(), Box<dyn Error>> {
 
     shell::prompt(config)?;
 
+    println!("");
     Ok(())
 }
 
@@ -220,7 +220,10 @@ pub fn prompt(config: &mut Config) -> Result<(), Box<dyn Error>> {
                     }
                 },
                 "run" => {
-                    run(config)?;
+                    if let Err(err) = run(config) {
+                        let message = format!("Error: {}", err);
+                        print_error(&message);
+                    }
                 },
                 "back" => {
                     break;
@@ -235,5 +238,7 @@ pub fn prompt(config: &mut Config) -> Result<(), Box<dyn Error>> {
             help();
         }
     }
+
+    println!("");
     Ok(())
 }

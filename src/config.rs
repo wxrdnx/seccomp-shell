@@ -74,7 +74,7 @@ pub struct Receiver {
     pub port_index: usize,
 }
 
-pub struct DirInjector {
+pub struct Sender {
     pub shellcode: &'static [u8],
     pub shellcode_len: usize,
 }
