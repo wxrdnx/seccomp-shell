@@ -159,21 +159,24 @@ fn help() {
     ); 
 }
 
-fn exit(config: &mut Config) -> Result<(), Box<dyn Error>> {
+fn exit(config: &mut Config) -> Result<bool, Box<dyn Error>> {
     let stdin = io::stdin();
     loop {
         let mut line = String::new();
         let quote = "Exit server? y) n) ".bold();
         println!("{}", quote);
         let bytes_read = stdin.read_line(&mut line)?;
-        if bytes_read != 0 && line.chars().nth(0).unwrap() == 'y'{
-            config.conn.as_ref().unwrap().shutdown(Shutdown::Both)?;
-            config.conn = None;
-            break;
+        if bytes_read != 0 {
+            let first_char = line.chars().nth(0).unwrap();
+            if first_char == 'y' {
+                config.conn.as_ref().unwrap().shutdown(Shutdown::Both)?;
+                config.conn = None;
+                return Ok(true);
+            } else if first_char == 'n' {
+                return Ok(false);
+            }
         }
     }
-
-    Ok(())
 }
 
 pub fn prompt(config: &mut Config) -> Result<(), Box<dyn Error>> {
@@ -191,7 +194,18 @@ pub fn prompt(config: &mut Config) -> Result<(), Box<dyn Error>> {
 
         let bytes_read = stdin.read_line(&mut line)?;
         if bytes_read == 0 {
-            break;
+            match exit(config) {
+                Ok(want_exit) => {
+                    if want_exit {
+                        break;
+                    }
+                },
+                Err(err) => {
+                    let message = format!("Error: {}", err);
+                    print_error(&message);
+                }
+            }
+            continue;
         }
         let mut iter = line.trim().split_whitespace();
         if let Some(command) = iter.next() {
@@ -220,11 +234,16 @@ pub fn prompt(config: &mut Config) -> Result<(), Box<dyn Error>> {
                     }
                 },
                 "exit" => {
-                    if let Err(err) = exit(config) {
-                        let message = format!("Error: {}", err);
-                        print_error(&message);
-                    } else {
-                        break;
+                    match exit(config) {
+                        Ok(want_exit) => {
+                            if want_exit {
+                                break;
+                            }
+                        },
+                        Err(err) => {
+                            let message = format!("Error: {}", err);
+                            print_error(&message);
+                        }
                     }
                 },
                 _ => {
