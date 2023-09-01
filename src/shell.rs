@@ -3,7 +3,28 @@ use std::{io::{self, Write, Read}, error::Error, net::Shutdown};
 use colored::Colorize;
 use errno::Errno;
 
-use crate::{util::print_error, config::Config, shellcode::{SYS_OPEN_DIR_SENDER, SYS_OPEN_CAT_SENDER}};
+use crate::{util::print_error, config::Config, shellcode::{SYS_OPEN_DIR_SENDER, SYS_OPEN_CAT_SENDER, SYS_CHDIR_CD_SENDER, SYS_GETCWD_CWD_SENDER, SYS_GETUID_GETUID_SENDER}};
+
+fn help() {
+    println!(
+        "
+    Core Commands
+    =============
+
+        Command       Description               Syscalls
+        -------       -------                   -----------
+        help          Print This Menu           N/A
+        ls [DIR]      List directory            SYS_open, SYS_getdents
+        dir [DIR]     List directory            SYS_open, SYS_getdents
+        cat [FILE]    Print File Content        SYS_open, SYS_read
+        cd [DIR]      Change Directory          SYS_chdir
+        pwd           Print Current Directory   SYS_getcwd
+        getuid        Get Current UID           SYS_getuid
+        getgid        Get Current GID           SYS_getgid
+        exit          Exit shell                N/A
+"
+    );
+}
 
 fn dir(config: &Config, file: &str) -> Result<(), Box<dyn Error>> {
     if config.conn.is_none() {
@@ -52,14 +73,7 @@ fn dir(config: &Config, file: &str) -> Result<(), Box<dyn Error>> {
         /* Remove redundant null bytes */
         file_name_buff = file_name_buff.into_iter().take_while(|&x| x != 0).collect();
 
-        let file_name = match String::from_utf8(file_name_buff) {
-            Ok(name) => {
-                name
-            },
-            Err(_) => {
-                "?".to_string()
-            }
-        };
+        let file_name = String::from_utf8_lossy(&file_name_buff).to_string();
 
         let mut d_type_buff = [0; 1];
         conn.read_exact(&mut d_type_buff)?;
@@ -137,40 +151,94 @@ fn cat(config: &Config, file: &str) -> Result<(), Box<dyn Error>> {
         file_content_buff.extend(chunk_buff);
     }
 
-    let file_content = String::from_utf8_lossy(&file_content_buff);
+    let file_content = String::from_utf8_lossy(&file_content_buff).to_string();
     println!("{}", file_content);
 
     Ok(())
 }
 
-fn help() {
-    println!(
-        "
-    Core Commands
-    =============
+fn cd(config: &Config, file: &str) -> Result<(), Box<dyn Error>> {
+    if config.conn.is_none() {
+        return Err("Server not connected".into());
+    }
+    let cd_sender = SYS_CHDIR_CD_SENDER;
+    let mut cd_shellcode = cd_sender.shellcode.to_vec();
+    cd_shellcode.extend(file.as_bytes());
+    cd_shellcode.push(0);
 
-        Command       Syscall       Description
-        -------       -------       -----------
-        ls [DIR]      List directory
-        dir [DIR]     List directory
-        cat [FILE]    Print File Content
-        exit          Exit shell
-"
-    ); 
+    let mut conn = config.conn.as_ref().unwrap();
+    conn.write(&cd_shellcode)?;
+
+    let mut beacon_buff = [0; 8];
+    conn.read_exact(&mut beacon_buff)?;
+    let beacon = i64::from_le_bytes(beacon_buff);
+    if beacon < 0 {
+        let e = -beacon;
+        let message = format!("cd: cannot access '{}': {}", file, Errno(e as i32));
+        return Err(message.into());
+    }
+
+    println!("Changed to '{}' successfully", file);
+
+    Ok(())
 }
 
-fn exit(config: &mut Config) -> Result<bool, Box<dyn Error>> {
+fn pwd(config: &Config) -> Result<(), Box<dyn Error>> {
+    if config.conn.is_none() {
+        return Err("Server not connected".into());
+    }
+    let pwd_sender = SYS_GETCWD_CWD_SENDER;
+    let pwd_shellcode = pwd_sender.shellcode.to_vec();
+
+    let mut conn = config.conn.as_ref().unwrap();
+    conn.write(&pwd_shellcode)?;
+
+    let mut cwd_len_buff = [0; 8];
+    conn.read_exact(&mut cwd_len_buff)?;
+    let cwd_len = i64::from_le_bytes(cwd_len_buff);
+
+    let mut cwd_buff = vec![0; cwd_len as usize];
+    conn.read_exact(&mut cwd_buff)?;
+    cwd_buff.pop(); // remove trailing null byte
+    let cwd = String::from_utf8_lossy(&cwd_buff).to_string();
+
+    println!("{}", cwd);
+
+    Ok(())
+}
+
+fn getuid(config: &Config) -> Result<(), Box<dyn Error>> {
+    if config.conn.is_none() {
+        return Err("Server not connected".into());
+    }
+    let getuid_sender = SYS_GETUID_GETUID_SENDER;
+    let getuid_shellcode = getuid_sender.shellcode.to_vec();
+
+    let mut conn = config.conn.as_ref().unwrap();
+    conn.write(&getuid_shellcode)?;
+
+    let mut uid_buff = [0; 8];
+    conn.read_exact(&mut uid_buff)?;
+    let uid = i64::from_le_bytes(uid_buff);
+
+    println!("{}", uid);
+
+    Ok(())
+}
+
+fn exit() -> Result<bool, Box<dyn Error>> {
     let stdin = io::stdin();
+    let stdout = io::stdout();
+    let mut stdout_handle = stdout.lock();
     loop {
         let mut line = String::new();
-        let quote = "Exit server? y) n) ".bold();
-        println!("{}", quote);
+        let quote = "Exit server? (y/n)> ".bold();
+        write!(stdout_handle, "{}", quote)?;
+        stdout_handle.flush()?;
         let bytes_read = stdin.read_line(&mut line)?;
         if bytes_read != 0 {
             let first_char = line.chars().nth(0).unwrap();
             if first_char == 'y' {
-                config.conn.as_ref().unwrap().shutdown(Shutdown::Both)?;
-                config.conn = None;
                 return Ok(true);
             } else if first_char == 'n' {
                 return Ok(false);
@@ -194,15 +262,21 @@ pub fn prompt(config: &mut Config) -> Result<(), Box<dyn Error>> {
 
         let bytes_read = stdin.read_line(&mut line)?;
         if bytes_read == 0 {
-            match exit(config) {
+            match exit() {
                 Ok(want_exit) => {
-                    if want_exit {
+                    if want_exit && config.conn.is_some() {
+                        config.conn.as_ref().unwrap().shutdown(Shutdown::Both)?;
+                        config.conn = None;
                         break;
                     }
                 },
-                Err(err) => {
-                    let message = format!("Error: {}", err);
-                    print_error(&message);
+                Err(_) => {
+                    /* Close the connection in case things go wrong */
+                    /* Probably not a good idea here, but I'll fix this later */
+                    if config.conn.is_some() {
+                        config.conn.as_ref().unwrap().shutdown(Shutdown::Both)?;
+                        config.conn = None;
+                    }
                 }
             }
             continue;
@@ -233,16 +307,42 @@ pub fn prompt(config: &mut Config) -> Result<(), Box<dyn Error>> {
                         print_error("Error: cat: no file specified")
                     }
                 },
+                "cd" => {
+                    if let Some(f) = iter.next() {
+                        if let Err(err) = cd(config, f) {
+                            let message = format!("Error: {}", err);
+                            print_error(&message);
+                        }
+                    }
+                },
+                "pwd" => {
+                    if let Err(err) = pwd(config) {
+                        let message = format!("Error: {}", err);
+                        print_error(&message);
+                    }
+                },
+                "getuid" => {
+                    if let Err(err) = getuid(config) {
+                        let message = format!("Error: {}", err);
+                        print_error(&message);
+                    }
+                },
                 "exit" => {
-                    match exit(config) {
+                    match exit() {
                         Ok(want_exit) => {
-                            if want_exit {
+                            if want_exit && config.conn.is_some() {
+                                config.conn.as_ref().unwrap().shutdown(Shutdown::Both)?;
+                                config.conn = None;
                                 break;
                             }
                         },
-                        Err(err) => {
-                            let message = format!("Error: {}", err);
-                            print_error(&message);
+                        Err(_) => {
+                            /* Close the connection in case things go wrong */
+                            /* Probably not a good idea here, but I'll fix this later */
+                            if config.conn.is_some() {
+                                config.conn.as_ref().unwrap().shutdown(Shutdown::Both)?;
+                                config.conn = None;
+                            }
                         }
                     }
                 },
