@@ -74,20 +74,39 @@ pub struct Receiver {
     pub port_index: usize,
 }
 
-pub struct Sender {
+pub struct DirSender {
     pub shellcode: &'static [u8],
-    pub shellcode_len: usize,
+    pub dir_len_index: usize,
 }
 
-pub struct Scanner {
+pub struct CatSender {
     pub shellcode: &'static [u8],
-    pub shellcode_len: usize,
-    pub host_index: usize,
+    pub file_len_index: usize,
 }
 
-pub struct Escaper {
+pub struct CdSender {
     pub shellcode: &'static [u8],
-    pub shellcode_len: usize,
+    pub file_len_index: usize,
+}
+
+pub struct PwdSender {
+    pub shellcode: &'static [u8],
+}
+
+pub struct GetuidSender {
+    pub shellcode: &'static [u8],
+}
+
+pub struct GetgidSender {
+    pub shellcode: &'static [u8],
+}
+pub struct TcpScanner {
+    pub shellcode: &'static [u8],
+}
+
+pub struct RedisEscaper {
+    pub shellcode: &'static [u8],
     pub port_index: usize,
-    pub data_length_index: usize,
+    pub data_length_index0: usize,
+    pub data_length_index1: usize,
 }

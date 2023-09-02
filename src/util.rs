@@ -34,3 +34,38 @@ pub fn print_shellcode_hex(shellcode: &[u8]) {
     }
     println!("");
 }
+
+pub fn colorized_file(file_name: &str, d_type: u8) -> String {
+    match d_type {
+        0 => { // DT_UNKNOWN
+            file_name.to_string()
+        }
+        1 => { // DT_FIFO
+            file_name.yellow().on_black().to_string()
+        },
+        2 => { // DT_CHR
+            file_name.yellow().bold().to_string()
+        },
+        4 => { // DT_DIR
+            file_name.blue().bold().to_string()
+        },
+        6 => { // DT_BLK
+            file_name.yellow().bold().to_string()
+        },
+        8 => { // DT_REG
+            file_name.to_string()
+        },
+        10 => { // DT_LNK
+            file_name.cyan().bold().to_string()
+        }
+        12 => { // DT_SOCK
+            file_name.magenta().bold().to_string()
+        },
+        14 => { // DT_WHT
+            file_name.to_string()
+        },
+        _ => {
+            file_name.to_string()
+        }
+    }
+}

