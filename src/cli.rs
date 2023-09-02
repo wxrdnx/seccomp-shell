@@ -3,7 +3,7 @@ use std::{error::Error, io::{self, Write}};
 
 use crate::{config::Config, shell};
 use crate::server;
-use crate::util::{print_error};
+use crate::util::print_failed;
 
 fn help() {
     println!(
@@ -14,7 +14,6 @@ fn help() {
         Command       Description
         -------       -----------
         help          Help menu
-        config        Configure Enabled Syscalls
         server        Establish C&C server
         exit          Exit program
 "
@@ -49,7 +48,7 @@ pub fn prompt(config: &mut Config) -> Result<(), Box<dyn Error>> {
                 },
                 "shell" => {
                     if !config.conn.is_none() {
-                        print_error("Server not connected");
+                        print_failed("Server not connected");
                     } else {
                         shell::prompt(config)?;
                     }
@@ -62,7 +61,7 @@ pub fn prompt(config: &mut Config) -> Result<(), Box<dyn Error>> {
                 },
                 _ => {
                     let message = format!("Unknown command {}", command);
-                    print_error(&message);
+                    print_failed(&message);
                     help();
                 },
             };

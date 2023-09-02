@@ -1,4 +1,8 @@
+use std::{net::Shutdown, error::Error};
+
 use colored::Colorize;
+
+use crate::config::Config;
 
 pub fn print_info(message: &str) {
     let output = format!("[{}] {}", "*".blue(), message.blue().bold());
@@ -15,10 +19,16 @@ pub fn print_warning(message: &str) {
     println!("{}", output);
 }
 
-pub fn print_error(message: &str) {
+pub fn print_failed(message: &str) {
     let output = format!("[{}] {}", "-".red(), message.red().bold());
     eprintln!("{}", output);
 }
+
+pub fn print_error(err: Box<dyn Error>) {
+    let message = format!("Error: {}", err);
+    print_failed(&message);
+}
+
 
 pub fn print_shellcode_quoted(shellcode: &[u8]) {
     print!("\"");
@@ -33,6 +43,14 @@ pub fn print_shellcode_hex(shellcode: &[u8]) {
         print!("{:02x}", byte);
     }
     println!("");
+}
+
+pub fn close_connection(config: &mut Config) {
+    if config.conn.is_some() {
+        config.conn.as_ref().unwrap().shutdown(Shutdown::Both).unwrap_or_default();
+        config.conn = None;
+    }
+    print_info("Server closed");
 }
 
 pub fn colorized_file(file_name: &str, d_type: u8) -> String {

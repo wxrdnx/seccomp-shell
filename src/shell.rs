@@ -1,9 +1,9 @@
-use std::{io::{self, Write, Read}, error::Error, net::Shutdown};
+use std::{io::{self, Write, Read}, error::Error};
 
 use colored::Colorize;
 use errno::Errno;
 
-use crate::{util::{print_error, print_success, colorized_file}, config::Config, shellcode::{SYS_GETUID_GETUID_SENDER, SYS_GETGID_GETGID_SENDER, SHELLCODE_LEN, REDIS_ESCAPER, OPEN_DIR_SENDER, OPEN_CAT_SENDER, CD_SENDER, PWD_SENDER, TCP_PORT_SCANNER}};
+use crate::{util::{print_failed, print_success, colorized_file, close_connection, print_error}, config::Config, shellcode::{SYS_GETUID_GETUID_SENDER, SYS_GETGID_GETGID_SENDER, SHELLCODE_LEN, REDIS_ESCAPER, OPEN_DIR_SENDER, OPEN_CAT_SENDER, CD_SENDER, PWD_SENDER, TCP_PORT_SCANNER}};
 
 fn help() {
     println!(
@@ -318,6 +318,9 @@ pub fn redis(config: &mut Config, port: u16) -> Result<(), Box<dyn Error>> {
             break;
         }
         let cmds: Vec<&str> = line.trim().split_whitespace().collect();
+        if cmds[0] == "exit" || cmds[0] == "quit" {
+            break;
+        }
 
         let mut payload = String::new();
         payload.push('*');
@@ -399,24 +402,17 @@ pub fn prompt(config: &mut Config) -> Result<(), Box<dyn Error>> {
 
         let bytes_read = stdin.read_line(&mut line)?;
         if bytes_read == 0 {
-            match exit() {
-                Ok(want_exit) => {
-                    if want_exit && config.conn.is_some() {
-                        config.conn.as_ref().unwrap().shutdown(Shutdown::Both)?;
-                        config.conn = None;
-                        break;
-                    }
-                },
-                Err(_) => {
-                    /* Close the connection in case things go wrong */
-                    /* Probably not a good idea here, but I'll fix this later */
-                    if config.conn.is_some() {
-                        config.conn.as_ref().unwrap().shutdown(Shutdown::Both)?;
-                        config.conn = None;
-                    }
+            if let Ok(want_exit) = exit() {
+                if want_exit {
+                    close_connection(config);
+                    break;
                 }
+            } else {
+                /* Close the connection in case things go wrong */
+                /* Probably not a good idea here, but I'll fix this later */
+                close_connection(config);
+                break;
             }
-            continue;
         }
         let mut iter = line.trim().split_whitespace();
         if let Some(command) = iter.next() {
@@ -426,54 +422,49 @@ pub fn prompt(config: &mut Config) -> Result<(), Box<dyn Error>> {
                 },
                 "ls" | "dir" => {
                     let file = match iter.next() {
-                        Some(f) => f,
+                        Some(file_name) => file_name,
                         None => ".",
                     };
                     if let Err(err) = dir(config, file) {
                         let message = format!("Error: {}", err);
-                        print_error(&message);
+                        print_failed(&message);
                     }
                 },
                 "cat" | "type" => {
                     if let Some(f) = iter.next() {
                         if let Err(err) = cat(config, f) {
                             let message = format!("Error: {}", err);
-                            print_error(&message);
+                            print_failed(&message);
                         }
                     } else {
-                        print_error("Error: cat: no file specified")
+                        print_failed("Error: cat: no file specified")
                     }
                 },
                 "cd" => {
-                    if let Some(f) = iter.next() {
-                        if let Err(err) = cd(config, f) {
-                            let message = format!("Error: {}", err);
-                            print_error(&message);
+                    if let Some(file_name) = iter.next() {
+                        if let Err(err) = cd(config, file_name) {
+                            print_error(err);
                         }
                     }
                 },
                 "pwd" => {
                     if let Err(err) = pwd(config) {
-                        let message = format!("Error: {}", err);
-                        print_error(&message);
+                        print_error(err);
                     }
                 },
                 "getuid" => {
                     if let Err(err) = getuid(config) {
-                        let message = format!("Error: {}", err);
-                        print_error(&message);
+                        print_error(err);
                     }
                 },
                 "getgid" => {
                     if let Err(err) = getgid(config) {
-                        let message = format!("Error: {}", err);
-                        print_error(&message);
+                        print_error(err);
                     }
                 },
                 "portscan" => {
                     if let Err(err) = portscan(config) {
-                        let message = format!("Error: {}", err);
-                        print_error(&message);
+                        print_error(err);
                     }
                 },
                 "redis" => {
@@ -490,32 +481,25 @@ pub fn prompt(config: &mut Config) -> Result<(), Box<dyn Error>> {
                         }
                     };
                     if let Err(err) = redis(config, port) {
-                        let message = format!("Error: {}", err);
-                        print_error(&message);
+                        print_error(err);
                     }
                 },
                 "exit" => {
-                    match exit() {
-                        Ok(want_exit) => {
-                            if want_exit && config.conn.is_some() {
-                                config.conn.as_ref().unwrap().shutdown(Shutdown::Both)?;
-                                config.conn = None;
-                                break;
-                            }
-                        },
-                        Err(_) => {
-                            /* Close the connection in case things go wrong */
-                            /* Probably not a good idea here, but I'll fix this later */
-                            if config.conn.is_some() {
-                                config.conn.as_ref().unwrap().shutdown(Shutdown::Both)?;
-                                config.conn = None;
-                            }
+                    if let Ok(want_exit) = exit() {
+                        if want_exit {
+                            close_connection(config);
+                            break;
                         }
+                    } else {
+                        /* Close the connection in case things go wrong */
+                        /* Probably not a good idea here, but I'll fix this later */
+                        close_connection(config);
+                        break;
                     }
                 },
                 _ => {
                     let message = format!("Unknown command '{}'", command);
-                    print_error(&message);
+                    print_failed(&message);
                     help();
                 }
             };

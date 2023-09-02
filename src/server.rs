@@ -2,8 +2,8 @@ use colored::Colorize;
 use syscalls::Sysno;
 use std::{error::Error, io::{self, Write}, net::{TcpListener, ToSocketAddrs, IpAddr}};
 
-use crate::{config::{Config, ScFmt}, util::{print_shellcode_quoted, print_shellcode_hex, print_info}, shellcode::{SYS_READ_RECEIVER, SYS_RECVFROM_RECEIVER}, syscall, shell};
-use crate::util::{print_success, print_warning, print_error};
+use crate::{config::{Config, ScFmt}, util::{print_shellcode_quoted, print_shellcode_hex, print_info, close_connection, print_error}, shellcode::{SYS_READ_RECEIVER, SYS_RECVFROM_RECEIVER}, syscall, shell};
+use crate::util::{print_success, print_warning, print_failed};
 
 fn help() {
     print!("
@@ -71,26 +71,22 @@ fn set(config: &mut Config, option: &str, value: &str) {
                     }
                     if !found {
                         let error_message= format!("Error: no ip matched to {}", value);
-                        print_error(&error_message);
+                        print_failed(&error_message);
                     }
                 },
                 Err(err) => {
-                    let error_message= format!("Error reaching host '{}': {}", value, err.to_string());
-                    print_error(&error_message);
+                    print_error(Box::new(err));
                 },
             }
         },
         "port" => {
-            match value.parse::<u16>() {
-                Ok(port) => {
-                    config.server_port = port;
-                    let success_message = format!("Port set to '{}'", config.server_port);
-                    print_success(&success_message);
-                },
-                Err(_) => {
-                    let error_message= format!("Error: invalid port '{}'", value);
-                    print_error(&error_message);
-                },
+            if let Ok(port) = value.parse::<u16>() {
+                config.server_port = port;
+                let success_message = format!("Port set to '{}'", config.server_port);
+                print_success(&success_message);
+            } else {
+                let error_message= format!("Error: invalid port '{}'", value);
+                print_failed(&error_message);
             }
         },
         "format" => {
@@ -103,7 +99,7 @@ fn set(config: &mut Config, option: &str, value: &str) {
                 },
                 _ => {
                     let error_message= format!("Error: invalid format '{}'", value);
-                    print_error(&error_message);
+                    print_failed(&error_message);
                     return;
                 }
             }
@@ -120,7 +116,7 @@ fn set(config: &mut Config, option: &str, value: &str) {
                 },
                 _ => {
                     let error_message= format!("Error: invalid syscall '{}'", value);
-                    print_error(&error_message);
+                    print_failed(&error_message);
                     return;
                 },
             }
@@ -129,7 +125,7 @@ fn set(config: &mut Config, option: &str, value: &str) {
         },
         _ => {
             let message = format!("Invalid option '{}'", option);
-            print_error(&message);
+            print_failed(&message);
         }
     }
 }
@@ -211,26 +207,29 @@ pub fn prompt(config: &mut Config) -> Result<(), Box<dyn Error>> {
                         if let Some(value) = iter.next() {
                             set(config, option, value);
                         } else {
-                            print_error("No value specified");
+                            print_failed("No value specified");
                             help();
                         }
                     } else {
-                        print_error("No option specified");
+                        print_failed("No option specified");
                         help();
                     }
                 },
                 "run" => {
                     if let Err(err) = run(config) {
                         let message = format!("Error: {}", err);
-                        print_error(&message);
+                        print_failed(&message);
                     }
+                },
+                "close" => {
+                    close_connection(config);
                 },
                 "back" => {
                     break;
                 },
                 _ => {
                     let message = format!("Unknown command {}", command);
-                    print_error(&message);
+                    print_failed(&message);
                     help();
                 }
             };
