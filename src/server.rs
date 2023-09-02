@@ -174,7 +174,6 @@ fn run(config: &mut Config) -> Result<(), Box<dyn Error>> {
 
     shell::prompt(config)?;
 
-    println!("");
     Ok(())
 }
 

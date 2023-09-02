@@ -78,3 +78,16 @@ pub struct Sender {
     pub shellcode: &'static [u8],
     pub shellcode_len: usize,
 }
+
+pub struct Scanner {
+    pub shellcode: &'static [u8],
+    pub shellcode_len: usize,
+    pub host_index: usize,
+}
+
+pub struct Escaper {
+    pub shellcode: &'static [u8],
+    pub shellcode_len: usize,
+    pub port_index: usize,
+    pub data_length_index: usize,
+}
