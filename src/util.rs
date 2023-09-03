@@ -1,4 +1,4 @@
-use std::{net::Shutdown, error::Error};
+use std::{net::Shutdown, error::Error, fs::File, io::Read};
 
 use colored::Colorize;
 use rand::{thread_rng, Rng, distributions::Alphanumeric};
@@ -93,4 +93,16 @@ pub fn gen_random_filename(original_name: &str) -> String {
     let rand_stream: Vec<u8> = thread_rng().sample_iter(&Alphanumeric).take(10).collect();
     let rand_string = String::from_utf8_lossy(&rand_stream);
     format!("/tmp/{}_{}", rand_string, original_name)
+}
+
+pub fn read_bytes_from_file(file_name: &str) -> Result<Vec<u8>, Box<dyn Error>> {
+    let payload_file = File::open(file_name);
+    if let Err(err) = payload_file {
+        let message = format!("cannot access file '{}': {}", file_name, err);
+        return Err(message.into());
+    }
+    let mut payload: Vec<u8> = Vec::new();
+    payload_file.unwrap().read_to_end(&mut payload)?;
+
+    Ok(payload)
 }
