@@ -93,6 +93,12 @@ pub struct PwdSender {
     pub shellcode: &'static [u8],
 }
 
+pub struct UploadSender {
+    pub shellcode: &'static [u8],
+    pub file_len_index: usize,
+    pub perm_index: usize,
+}
+
 pub struct GetuidSender {
     pub shellcode: &'static [u8],
 }

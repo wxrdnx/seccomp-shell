@@ -1,6 +1,7 @@
 use std::{net::Shutdown, error::Error};
 
 use colored::Colorize;
+use rand::{thread_rng, Rng, distributions::Alphanumeric};
 
 use crate::config::Config;
 
@@ -86,4 +87,10 @@ pub fn colorized_file(file_name: &str, d_type: u8) -> String {
             file_name.to_string()
         }
     }
+}
+
+pub fn gen_random_filename(original_name: &str) -> String {
+    let rand_stream: Vec<u8> = thread_rng().sample_iter(&Alphanumeric).take(10).collect();
+    let rand_string = String::from_utf8_lossy(&rand_stream);
+    format!("/tmp/{}_{}", rand_string, original_name)
 }

