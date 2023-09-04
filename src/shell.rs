@@ -39,7 +39,7 @@ fn help() {
     );
 }
 
-fn dir(config: &Config, directory: &str) -> Result<(), Box<dyn Error>> {
+fn dir(config: &Config, verbose: bool, directory: &str) -> Result<(), Box<dyn Error>> {
     if config.conn.is_none() {
         return Err("Server not connected".into());
     }
@@ -69,6 +69,10 @@ fn dir(config: &Config, directory: &str) -> Result<(), Box<dyn Error>> {
         let errno = -beacon;
         /* Not a directory: print the file directly */
         if errno == 20 {
+            if verbose {
+                let message = format!("Listing file '{}'", directory);
+                print_success(&message);
+            }
             println!("{}", directory);
             return Ok(());
         }
@@ -78,6 +82,8 @@ fn dir(config: &Config, directory: &str) -> Result<(), Box<dyn Error>> {
 
     let struct_len = beacon as u64;
     let mut index: u64 = 0;
+
+    let mut result = String::new();
 
     while index < struct_len {
         /* inode not important here */
@@ -107,15 +113,25 @@ fn dir(config: &Config, directory: &str) -> Result<(), Box<dyn Error>> {
         let d_type = u8::from_le_bytes(d_type_buff);
 
         let file_name_colored = colorized_file(&file_name, d_type);
-        println!("{}", file_name_colored);
+        result.push_str(&file_name_colored);
+        result.push('\n');
 
         index += d_reclen as u64;
     }
 
+    if verbose {
+        let message = format!("Listing directory '{}'", directory);
+        print_success(&message);
+    }
+
+    let stdout = io::stdout();
+    let mut stdout_handle = stdout.lock();
+    write!(stdout_handle, "{}", result)?;
+
     Ok(())
 }
 
-fn cat(config: &Config, file_name: &str) -> Result<(), Box<dyn Error>> {
+fn cat(config: &Config, verbose: bool, file_name: &str) -> Result<(), Box<dyn Error>> {
     if config.conn.is_none() {
         return Err("Server not connected".into());
     }
@@ -155,6 +171,11 @@ fn cat(config: &Config, file_name: &str) -> Result<(), Box<dyn Error>> {
         file_content_buff.extend(chunk_buff);
     }
 
+    if verbose {
+        let message = format!("Printing file '{}'", file_name);
+        print_success(&message);
+    }
+
     let file_content = String::from_utf8_lossy(&file_content_buff).to_string();
 
     let stdout = io::stdout();
@@ -164,7 +185,7 @@ fn cat(config: &Config, file_name: &str) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-fn cd(config: &Config, file: &str) -> Result<(), Box<dyn Error>> {
+fn cd(config: &Config, verbose: bool, file: &str) -> Result<(), Box<dyn Error>> {
     if config.conn.is_none() {
         return Err("Server not connected".into());
     }
@@ -194,8 +215,10 @@ fn cd(config: &Config, file: &str) -> Result<(), Box<dyn Error>> {
         return Err(message.into());
     }
 
-    let message = format!("Directory changed to '{}'", file);
-    print_success(&message);
+    if verbose {
+        let message = format!("Directory changed to '{}'", file);
+        print_success(&message);
+    }
 
     Ok(())
 }
@@ -340,7 +363,7 @@ fn upload(config: &Config, file_name: &str, perm: u16) -> Result<(), Box<dyn Err
     Ok(())
 }
 
-fn rm(config: &Config, file_name: &str) -> Result<(), Box<dyn Error>> {
+fn rm(config: &Config, verbose: bool, file_name: &str) -> Result<(), Box<dyn Error>> {
     if config.conn.is_none() {
         return Err("Server not connected".into());
     }
@@ -371,13 +394,16 @@ fn rm(config: &Config, file_name: &str) -> Result<(), Box<dyn Error>> {
         return Err(message.into());
     }
 
-    let message = format!("File '{}' removed", file_name);
+    if verbose {
+        let message = format!("File '{}' removed", file_name);
     print_success(&message);
 
+    }
+    
     Ok(())
 }
 
-pub fn mv(config: &Config, source_file_name: &str, dest_file_name: &str) -> Result<(), Box<dyn Error>> {
+pub fn mv(config: &Config, verbose: bool, source_file_name: &str, dest_file_name: &str) -> Result<(), Box<dyn Error>> {
     if config.conn.is_none() {
         return Err("Server not connected".into());
     }
@@ -412,17 +438,28 @@ pub fn mv(config: &Config, source_file_name: &str, dest_file_name: &str) -> Resu
     let beacon = i64::from_le_bytes(beacon_buff);
     if beacon < 0 {
         let errno = -beacon;
+        if errno == 18 {
+            cp(config, false, source_file_name, dest_file_name, 0o755)?;
+            rm(config, false, source_file_name)?;
+            if verbose {
+                let message = format!("Successfully move '{}' to '{}'", source_file_name, dest_file_name);
+                print_success(&message);
+            }
+            return Ok(());
+        }
         let message = format!("mv: cannot access '{}' or '{}': {}", source_file_name, dest_file_name, Errno(errno as i32));
         return Err(message.into());
     }
 
-    let message = format!("Successfully move '{}' to '{}'", source_file_name, dest_file_name);
-    print_success(&message);
+    if verbose {
+        let message = format!("Successfully move '{}' to '{}'", source_file_name, dest_file_name);
+        print_success(&message);
+    }
 
     Ok(())
 }
 
-pub fn cp(config: &Config, source_file_name: &str, dest_file_name: &str, perm: u16) -> Result<(), Box<dyn Error>> {
+pub fn cp(config: &Config, verbose: bool, source_file_name: &str, dest_file_name: &str, perm: u16) -> Result<(), Box<dyn Error>> {
     if config.conn.is_none() {
         return Err("Server not connected".into());
     }
@@ -463,12 +500,15 @@ pub fn cp(config: &Config, source_file_name: &str, dest_file_name: &str, perm: u
         return Err(message.into());
     }
 
-    let message = format!("Successfully copy '{}' to '{}'", source_file_name, dest_file_name);
-    print_success(&message);
+    if verbose {
+        let message = format!("Successfully copy '{}' to '{}'", source_file_name, dest_file_name);
+        print_success(&message);
+    }
+
     Ok(())
 }
 
-fn mkdir(config: &Config, dir_name: &str, perm: u16) -> Result<(), Box<dyn Error>> {
+fn mkdir(config: &Config, verbose: bool, dir_name: &str, perm: u16) -> Result<(), Box<dyn Error>> {
     if config.conn.is_none() {
         return Err("Server not connected".into());
     }
@@ -500,13 +540,15 @@ fn mkdir(config: &Config, dir_name: &str, perm: u16) -> Result<(), Box<dyn Error
         return Err(message.into());
     }
 
-    let message = format!("Directory '{}' created", dir_name);
-    print_success(&message);
+    if verbose {
+        let message = format!("Directory '{}' created", dir_name);
+        print_success(&message);
+    }
 
     Ok(())
 }
 
-fn rmdir(config: &Config, dir_name: &str) -> Result<(), Box<dyn Error>> {
+fn rmdir(config: &Config, verbose: bool, dir_name: &str) -> Result<(), Box<dyn Error>> {
     if config.conn.is_none() {
         return Err("Server not connected".into());
     }
@@ -536,8 +578,10 @@ fn rmdir(config: &Config, dir_name: &str) -> Result<(), Box<dyn Error>> {
         return Err(message.into());
     }
 
-    let message = format!("Directory '{}' removed", dir_name);
-    print_success(&message);
+    if verbose {
+        let message = format!("Directory '{}' removed", dir_name);
+        print_success(&message);
+    }
 
     Ok(())
 }
@@ -634,7 +678,7 @@ pub fn portscan(config: &mut Config) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-fn netcat(config: &Config, payload: &[u8], port: u16, quiet: bool) -> Result<(), Box<dyn Error>> {
+fn netcat(config: &Config, verbose: bool, payload: &[u8], port: u16) -> Result<(), Box<dyn Error>> {
     if config.conn.is_none() {
         return Err("Server not connected".into());
     }
@@ -676,7 +720,7 @@ fn netcat(config: &Config, payload: &[u8], port: u16, quiet: bool) -> Result<(),
         content_buff.extend(chunk_buff);
     }
 
-    if !quiet {
+    if verbose {
         let file_content = String::from_utf8_lossy(&content_buff).to_string();
         println!("{}", file_content);
     }
@@ -747,7 +791,7 @@ pub fn http(config: &mut Config, port: u16) -> Result<(), Box<dyn Error>> {
                         };
                         println!("{}", http_request_str);
                         let http_request = http_request_str.as_bytes();
-                        netcat(config, &http_request, port, false)?;
+                        netcat(config, true, &http_request, port)?;
                     } else {
                         print_failed("Error: no path specified");
                     }
@@ -775,7 +819,7 @@ pub fn redis(config: &mut Config, port: u16) -> Result<(), Box<dyn Error>> {
     let mut stdout_handle = stdout.lock();
 
     let set_timeout = "*4\r\n$6\r\nconfig\r\n$3\r\nset\r\n$7\r\ntimeout\r\n$1\r\n1\r\n".as_bytes();
-    netcat(config, &set_timeout, port, true)?;   
+    netcat(config, false, &set_timeout, port)?;   
 
     loop {
         let mut line = String::new();
@@ -808,7 +852,7 @@ pub fn redis(config: &mut Config, port: u16) -> Result<(), Box<dyn Error>> {
 
         /* Small hack: set timeout to 1 every time  */
         let payload = payload_str.as_bytes();
-        netcat(config, &payload, port, false)?;
+        netcat(config, true, &payload, port)?;
     }
 
     println!("");
@@ -853,13 +897,13 @@ pub fn prompt(config: &mut Config) -> Result<(), Box<dyn Error>> {
                         Some(file_name) => file_name,
                         None => ".",
                     };
-                    if let Err(err) = dir(config, file_name) {
+                    if let Err(err) = dir(config, true, file_name) {
                         print_error(err);
                     }
                 },
                 "cat" | "type" => {
                     if let Some(file_name) = iter.next() {
-                        if let Err(err) = cat(config, file_name) {
+                        if let Err(err) = cat(config, true, file_name) {
                             print_error(err);
                         }
                     } else {
@@ -868,7 +912,7 @@ pub fn prompt(config: &mut Config) -> Result<(), Box<dyn Error>> {
                 },
                 "cd" => {
                     if let Some(file_name) = iter.next() {
-                        if let Err(err) = cd(config, file_name) {
+                        if let Err(err) = cd(config, true, file_name) {
                             print_error(err);
                         }
                     }
@@ -913,7 +957,7 @@ pub fn prompt(config: &mut Config) -> Result<(), Box<dyn Error>> {
                 },
                 "rm" => {
                     if let Some(file_name) = iter.next() {
-                        if let Err(err) = rm(config, file_name) {
+                        if let Err(err) = rm(config, true, file_name) {
                             print_error(err);
                         }
                     } else {
@@ -923,7 +967,7 @@ pub fn prompt(config: &mut Config) -> Result<(), Box<dyn Error>> {
                 "mv" => {
                     if let Some(source_file_name) = iter.next() {
                         if let Some(dest_file_name) = iter.next() {
-                            if let Err(err) = mv(config, source_file_name, dest_file_name) {
+                            if let Err(err) = mv(config, true, source_file_name, dest_file_name) {
                                 print_error(err);
                             }
                         } else {
@@ -947,7 +991,7 @@ pub fn prompt(config: &mut Config) -> Result<(), Box<dyn Error>> {
                                 None => { Some(0o644) },
                             };
                             if let Some(perm) = perm_option {
-                                if let Err(err) = cp(config, source_file_name, dest_file_name, perm) {
+                                if let Err(err) = cp(config, true, source_file_name, dest_file_name, perm) {
                                     print_error(err);
                                 }
                             } else {
@@ -973,7 +1017,7 @@ pub fn prompt(config: &mut Config) -> Result<(), Box<dyn Error>> {
                             None => { Some(0o755) },
                         };
                         if let Some(perm) = perm_option {
-                            if let Err(err) = mkdir(config, file_name, perm) {
+                            if let Err(err) = mkdir(config, true, file_name, perm) {
                                 print_error(err);
                             }
                         } else {
@@ -985,7 +1029,7 @@ pub fn prompt(config: &mut Config) -> Result<(), Box<dyn Error>> {
                 },
                 "rmdir" => {
                     if let Some(file_name) = iter.next() {
-                        if let Err(err) = rmdir(config, file_name) {
+                        if let Err(err) = rmdir(config, true, file_name) {
                             print_error(err);
                         }
                     } else {
@@ -1013,7 +1057,7 @@ pub fn prompt(config: &mut Config) -> Result<(), Box<dyn Error>> {
                             Ok(data) => {
                                 if let Some(port_str) = iter.next() {
                                     if let Ok(port) = port_str.parse::<u16>() {
-                                        if let Err(err) = netcat(config, &data, port, false) {
+                                        if let Err(err) = netcat(config, true, &data, port) {
                                             print_error(err);
                                         }
                                     } else {
