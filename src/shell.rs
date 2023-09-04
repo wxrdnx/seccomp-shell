@@ -846,11 +846,11 @@ pub fn prompt(config: &mut Config) -> Result<(), Box<dyn Error>> {
                     help();
                 },
                 "ls" | "dir" => {
-                    let file = match iter.next() {
+                    let file_name = match iter.next() {
                         Some(file_name) => file_name,
                         None => ".",
                     };
-                    if let Err(err) = dir(config, file) {
+                    if let Err(err) = dir(config, file_name) {
                         print_error(err);
                     }
                 },
