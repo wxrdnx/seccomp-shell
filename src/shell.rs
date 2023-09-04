@@ -156,7 +156,10 @@ fn cat(config: &Config, file_name: &str) -> Result<(), Box<dyn Error>> {
     }
 
     let file_content = String::from_utf8_lossy(&file_content_buff).to_string();
-    println!("{}", file_content);
+
+    let stdout = io::stdout();
+    let mut stdout_handle = stdout.lock();
+    write!(stdout_handle, "{}", file_content)?;
 
     Ok(())
 }
