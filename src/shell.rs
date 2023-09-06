@@ -63,6 +63,7 @@ fn dir(config: &Config, verbose: bool, directory: &str) -> Result<(), Box<dyn Er
         return Err("dir: file name too long".into());
     }
     let dir_name_len = (directory.len() + 1) as u16; // include null byte
+    let directory_name_bytes = [directory.as_bytes(), &[0]].concat();
     let dir_sender = OPEN_DIR_SENDER;
 
     let mut shellcode = dir_sender.shellcode.to_vec();
@@ -74,8 +75,7 @@ fn dir(config: &Config, verbose: bool, directory: &str) -> Result<(), Box<dyn Er
 
     let mut conn = config.conn.as_ref().unwrap();
     conn.write(&shellcode)?;
-    conn.write(directory.as_bytes())?;
-    conn.write(&[0])?;
+    conn.write(&directory_name_bytes)?;
 
     let mut beacon_buff = [0; 8];
     conn.read_exact(&mut beacon_buff)?;
@@ -159,6 +159,7 @@ fn cat(config: &Config, verbose: bool, file_name: &str) -> Result<(), Box<dyn Er
         return Err("cat: file name too long".into());
     }
     let file_name_len = (file_name.len() + 1) as u16; // include null byte
+    let file_name_bytes = [file_name.as_bytes(), &[0]].concat();
     let cat_sender = OPEN_CAT_SENDER;
     let mut shellcode = cat_sender.shellcode.to_vec();
     let file_len_index_bytes = file_name_len.to_le_bytes();
@@ -169,8 +170,7 @@ fn cat(config: &Config, verbose: bool, file_name: &str) -> Result<(), Box<dyn Er
 
     let mut conn = config.conn.as_ref().unwrap();
     conn.write(&shellcode)?;
-    conn.write(file_name.as_bytes())?;
-    conn.write(&[0])?;
+    conn.write(&file_name_bytes)?;
 
     let mut beacon_buff = [0; 8];
     let mut file_content_buff = Vec::new();
@@ -209,14 +209,15 @@ fn cat(config: &Config, verbose: bool, file_name: &str) -> Result<(), Box<dyn Er
     Ok(())
 }
 
-fn cd(config: &Config, verbose: bool, file: &str) -> Result<(), Box<dyn Error>> {
+fn cd(config: &Config, verbose: bool, file_name: &str) -> Result<(), Box<dyn Error>> {
     if config.conn.is_none() {
         return Err("Server not connected".into());
     }
-    if file.len() >= 0xffff {
+    if file_name.len() >= 0xffff {
         return Err("cd: file name too long".into());
     }
-    let file_name_len = (file.len() + 1) as u16;
+    let file_name_len = (file_name.len() + 1) as u16;
+    let file_name_bytes = [file_name.as_bytes(), &[0]].concat();
     let cd_sender = CD_SENDER;
     let mut shellcode = cd_sender.shellcode.to_vec();
     let file_len_index_bytes = file_name_len.to_le_bytes();
@@ -227,20 +228,19 @@ fn cd(config: &Config, verbose: bool, file: &str) -> Result<(), Box<dyn Error>> 
 
     let mut conn = config.conn.as_ref().unwrap();
     conn.write(&shellcode)?;
-    conn.write(file.as_bytes())?;
-    conn.write(&[0])?;
+    conn.write(&file_name_bytes)?;
 
     let mut beacon_buff = [0; 8];
     conn.read_exact(&mut beacon_buff)?;
     let beacon = i64::from_le_bytes(beacon_buff);
     if beacon < 0 {
         let errno = -beacon;
-        let message = format!("cd: cannot access '{}': {}", file, Errno(errno as i32));
+        let message = format!("cd: cannot access '{}': {}", file_name, Errno(errno as i32));
         return Err(message.into());
     }
 
     if verbose {
-        let message = format!("Directory changed to '{}'", file);
+        let message = format!("Directory changed to '{}'", file_name);
         print_success(&message);
     }
 
@@ -280,6 +280,7 @@ fn download(config: &Config, file_name: &str) -> Result<(), Box<dyn Error>> {
         return Err("download: file name too long".into());
     }
     let file_name_len = (file_name.len() + 1) as u16; // include null byte
+    let file_name_bytes = [file_name.as_bytes(), &[0]].concat();
     let download_sender = OPEN_CAT_SENDER; // use cat sender because the shellcode is the same
     let mut shellcode = download_sender.shellcode.to_vec();
     let file_len_index_bytes = file_name_len.to_le_bytes();
@@ -290,8 +291,7 @@ fn download(config: &Config, file_name: &str) -> Result<(), Box<dyn Error>> {
 
     let mut conn = config.conn.as_ref().unwrap();
     conn.write(&shellcode)?;
-    conn.write(file_name.as_bytes())?;
-    conn.write(&[0])?;
+    conn.write(&file_name_bytes)?;
 
     let mut beacon_buff = [0; 8];
     let mut file_content_buff = Vec::new();
@@ -354,6 +354,7 @@ fn upload(config: &Config, file_name: &str, perm: u16) -> Result<(), Box<dyn Err
         .unwrap_or_default()
         .to_string_lossy();
     let upload_file_name = gen_random_filename(&original_file_name);
+    let upload_file_name_bytes = [upload_file_name.as_bytes(), &[0]].concat();
     let upload_file_name_len = (upload_file_name.len() + 1) as u16;
 
     let mut file_content_buff = Vec::new();
@@ -372,8 +373,7 @@ fn upload(config: &Config, file_name: &str, perm: u16) -> Result<(), Box<dyn Err
 
     let mut conn = config.conn.as_ref().unwrap();
     conn.write(&shellcode)?;
-    conn.write(upload_file_name.as_bytes())?;
-    conn.write(&[0])?;
+    conn.write(&upload_file_name_bytes)?;
 
     let mut index = 0;
     let file_content_len = file_content_buff.len();
@@ -408,6 +408,7 @@ fn rm(config: &Config, verbose: bool, file_name: &str) -> Result<(), Box<dyn Err
         return Err("rm: file name too long".into());
     }
     let file_name_len = (file_name.len() + 1) as u16;
+    let file_name_bytes = [file_name.as_bytes(), &[0]].concat();
     let rm_sender = RM_SENDER;
     let mut shellcode = rm_sender.shellcode.to_vec();
 
@@ -419,8 +420,7 @@ fn rm(config: &Config, verbose: bool, file_name: &str) -> Result<(), Box<dyn Err
 
     let mut conn = config.conn.as_ref().unwrap();
     conn.write(&shellcode)?;
-    conn.write(file_name.as_bytes())?;
-    conn.write(&[0])?;
+    conn.write(&file_name_bytes)?;
 
     let mut beacon_buff = [0; 8];
     conn.read_exact(&mut beacon_buff)?;
@@ -457,6 +457,8 @@ pub fn mv(
 
     let source_file_name_len = (source_file_name.len() + 1) as u16;
     let dest_file_name_len = (dest_file_name.len() + 1) as u16;
+    let source_file_name_bytes = [source_file_name.as_bytes(), &[0]].concat();
+    let dest_file_name_bytes = [dest_file_name.as_bytes(), &[0]].concat();
     let mv_sender = MV_SENDER;
     let mut shellcode = mv_sender.shellcode.to_vec();
     let source_file_name_len_bytes = source_file_name_len.to_le_bytes();
@@ -469,10 +471,8 @@ pub fn mv(
 
     let mut conn = config.conn.as_ref().unwrap();
     conn.write(&shellcode)?;
-    conn.write(source_file_name.as_bytes())?;
-    conn.write(&[0])?;
-    conn.write(dest_file_name.as_bytes())?;
-    conn.write(&[0])?;
+    conn.write(&source_file_name_bytes)?;
+    conn.write(&dest_file_name_bytes)?;
 
     let mut beacon_buff = [0; 8];
     conn.read_exact(&mut beacon_buff)?;
@@ -480,8 +480,7 @@ pub fn mv(
     if beacon < 0 {
         let errno = -beacon;
         if errno == 18 {
-            cp(config, false, source_file_name, dest_file_name, 0o755)?;
-            rm(config, false, source_file_name)?;
+            
             if verbose {
                 let message = format!(
                     "Successfully move '{}' to '{}'",
@@ -529,7 +528,10 @@ pub fn cp(
     }
 
     let source_file_name_len = (source_file_name.len() + 1) as u16;
+    let source_file_name_bytes = [source_file_name.as_bytes(), &[0]].concat();
     let dest_file_name_len = (dest_file_name.len() + 1) as u16;
+    let dest_file_name_bytes = [dest_file_name.as_bytes(), &[0]].concat();
+
     let cp_sender = CP_SENDER;
     let mut shellcode = cp_sender.shellcode.to_vec();
     let source_file_name_len_bytes = source_file_name_len.to_le_bytes();
@@ -544,20 +546,46 @@ pub fn cp(
 
     let mut conn = config.conn.as_ref().unwrap();
     conn.write(&shellcode)?;
-    conn.write(source_file_name.as_bytes())?;
-    conn.write(&[0])?;
-    conn.write(dest_file_name.as_bytes())?;
-    conn.write(&[0])?;
+    conn.write(&source_file_name_bytes)?;
 
     let mut beacon_buff = [0; 8];
     conn.read_exact(&mut beacon_buff)?;
     let beacon = i64::from_le_bytes(beacon_buff);
+
     if beacon < 0 {
         let errno = -beacon;
         let message = format!(
-            "cp: cannot access '{}' or '{}': {}",
+            "cp: cannot access '{}': {}",
             source_file_name,
+            Errno(errno as i32)
+        );
+        return Err(message.into());
+    }
+
+    conn.write(&dest_file_name_bytes)?;
+
+    let mut beacon_buff = [0; 8];
+    conn.read_exact(&mut beacon_buff)?;
+    let beacon = i64::from_le_bytes(beacon_buff);
+
+    if beacon < 0 {
+        let errno = -beacon;
+        let message = format!(
+            "cp: cannot access '{}': {}",
             dest_file_name,
+            Errno(errno as i32)
+        );
+        return Err(message.into());
+    }
+
+    let mut beacon_buff = [0; 8];
+    conn.read_exact(&mut beacon_buff)?;
+    let beacon = i64::from_le_bytes(beacon_buff);
+
+    if beacon < 0 {
+        let errno = -beacon;
+        let message = format!(
+            "cp: {}",
             Errno(errno as i32)
         );
         return Err(message.into());
@@ -582,6 +610,7 @@ fn mkdir(config: &Config, verbose: bool, dir_name: &str, perm: u16) -> Result<()
         return Err("mkdir: file name too long".into());
     }
     let dir_name_len = (dir_name.len() + 1) as u16;
+    let dir_name_bytes = [dir_name.as_bytes(), &[0]].concat();
     let mkdir_sender = MKDIR_SENDER;
     let mut shellcode = mkdir_sender.shellcode.to_vec();
     let dir_name_len_bytes = dir_name_len.to_le_bytes();
@@ -594,8 +623,7 @@ fn mkdir(config: &Config, verbose: bool, dir_name: &str, perm: u16) -> Result<()
 
     let mut conn = config.conn.as_ref().unwrap();
     conn.write(&shellcode)?;
-    conn.write(dir_name.as_bytes())?;
-    conn.write(&[0])?;
+    conn.write(&dir_name_bytes)?;
 
     let mut beacon_buff = [0; 8];
     conn.read_exact(&mut beacon_buff)?;
@@ -626,6 +654,7 @@ fn rmdir(config: &Config, verbose: bool, dir_name: &str) -> Result<(), Box<dyn E
         return Err("rmdir: file name too long".into());
     }
     let dir_name_len = (dir_name.len() + 1) as u16;
+    let dir_name_bytes = [dir_name.as_bytes(), &[0]].concat();
     let rmdir_sender = RMDIR_SENDER;
     let mut shellcode = rmdir_sender.shellcode.to_vec();
     let dir_name_len_bytes = dir_name_len.to_le_bytes();
@@ -636,8 +665,7 @@ fn rmdir(config: &Config, verbose: bool, dir_name: &str) -> Result<(), Box<dyn E
 
     let mut conn = config.conn.as_ref().unwrap();
     conn.write(&shellcode)?;
-    conn.write(dir_name.as_bytes())?;
-    conn.write(&[0])?;
+    conn.write(&dir_name_bytes)?;
 
     let mut beacon_buff = [0; 8];
     conn.read_exact(&mut beacon_buff)?;
