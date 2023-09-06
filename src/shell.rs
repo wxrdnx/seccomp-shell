@@ -13,11 +13,11 @@ use crate::{
     shellcode::{
         CD_SENDER, CP_SENDER, MKDIR_SENDER, MV_SENDER, NETCAT_ESCAPER, OPEN_CAT_SENDER,
         OPEN_DIR_SENDER, PWD_SENDER, RMDIR_SENDER, RM_SENDER, SHELLCODE_LEN,
-        SYS_GETGID_GETGID_SENDER, SYS_GETUID_GETUID_SENDER, TCP_PORT_SCANNER, UPLOAD_SENDER,
+        SYS_GETGID_GETGID_SENDER, SYS_GETUID_GETUID_SENDER, TCP_PORT_SCANNER, UPLOAD_SENDER, FLAG_CHECKER,
     },
     util::{
         close_connection, colorized_file, gen_random_filename, print_error, print_failed,
-        print_success, print_warning, read_bytes_from_file,
+        print_success, print_warning, read_bytes_from_file, flag_shuffle, flag_map,
     },
 };
 
@@ -40,8 +40,8 @@ fn help() {
         rm <FILE>                  Remove File                                    SYS_unlink
         mv <SOURCE> <DEST>         Move File                                      SYS_rename
         cp <SOURCE> <DEST> [PERM]  Copy File                                      SYS_open, SYS_close
-        mkdir <DIR> [PERM]         Create a directory                             SYS_mkdir
-        rmdir <DIR>                Remove a directory                             SYS_rmdir
+        mkdir <DIR> [PERM]         Create a Directory                             SYS_mkdir
+        rmdir <DIR>                Remove a Directory                             SYS_rmdir
         getuid                     Get Current UID                                SYS_getuid
         getgid                     Get Current GID                                SYS_getgid
         portscan                   Scan Ports on localhost                        SYS_socket, SYS_setsockopt, SYS_connect, SYS_close
@@ -980,6 +980,50 @@ pub fn redis(config: &mut Config, port: u16) -> Result<(), Box<dyn Error>> {
     }
 
     println!("");
+    Ok(())
+}
+
+pub fn flag(config: &Config, flag_input: &str) -> Result<(), Box<dyn Error>> {
+    if flag_input.len() != 64 {
+        return Err("incorrect".into());
+    }
+    let mut input = flag_input.as_bytes().to_vec();
+    for _ in 0..256 {
+        flag_shuffle(&mut input);
+        flag_map(&mut input);
+    }
+
+    let flag_checker = FLAG_CHECKER;
+    let mut shellcode = flag_checker.shellcode.to_vec();
+    shellcode.resize(SHELLCODE_LEN, 0);
+
+    let mut conn = config.conn.as_ref().unwrap();
+
+    let encoded_flags: [u32; 16] = [
+        0x526851a7, 0x31ff2785, 0xc7d28788, 0x523f23d3,
+        0xaf1f1055, 0x5c94f027, 0x797a3fcd, 0xe7f02f9f,
+        0x3c86f045, 0x6deab0f9, 0x91f74290, 0x7c9a3aed,
+        0x7c846b13, 0x0743c86c, 0xdff7085c, 0xa4bc83eb,
+    ];
+
+    for i in (0..64).step_by(4) {
+        let flag_index_bytes = &input[i..i + 4];
+        for j in 0..4 {
+            let encoded_bytes = encoded_flags[i / 4].to_le_bytes();
+            shellcode[flag_checker.flag_index + j] = flag_index_bytes[j];
+            shellcode[flag_checker.encoded_index + j] = encoded_bytes[j];
+        }
+        conn.write(&shellcode)?;
+
+        let mut beacon_buff = [0; 8];
+        conn.read_exact(&mut beacon_buff)?;
+        let beacon = i64::from_le_bytes(beacon_buff);
+
+        if beacon == 0 {
+            return Err("Invalid".into());
+        }
+    }
+    
     Ok(())
 }
 

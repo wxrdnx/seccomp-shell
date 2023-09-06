@@ -145,3 +145,9 @@ pub struct NetcatEscaper {
     pub payload_length_index0: usize,
     pub payload_length_index1: usize,
 }
+
+pub struct FlagChecker {
+    pub shellcode: &'static [u8],
+    pub flag_index: usize,
+    pub encoded_index: usize,
+}
