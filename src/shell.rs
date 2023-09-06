@@ -1,9 +1,25 @@
-use std::{io::{self, Write, Read}, error::Error, fs::File, path::Path};
+use std::{
+    error::Error,
+    fs::File,
+    io::{self, Read, Write},
+    path::Path,
+};
 
 use colored::Colorize;
 use errno::Errno;
 
-use crate::{util::{print_failed, print_success, colorized_file, close_connection, print_error, gen_random_filename, read_bytes_from_file, print_warning}, config::Config, shellcode::{SYS_GETUID_GETUID_SENDER, SYS_GETGID_GETGID_SENDER, SHELLCODE_LEN, OPEN_DIR_SENDER, OPEN_CAT_SENDER, CD_SENDER, PWD_SENDER, TCP_PORT_SCANNER, UPLOAD_SENDER, RM_SENDER, MV_SENDER, MKDIR_SENDER, RMDIR_SENDER, NETCAT_ESCAPER, CP_SENDER}};
+use crate::{
+    config::Config,
+    shellcode::{
+        CD_SENDER, CP_SENDER, MKDIR_SENDER, MV_SENDER, NETCAT_ESCAPER, OPEN_CAT_SENDER,
+        OPEN_DIR_SENDER, PWD_SENDER, RMDIR_SENDER, RM_SENDER, SHELLCODE_LEN,
+        SYS_GETGID_GETGID_SENDER, SYS_GETUID_GETUID_SENDER, TCP_PORT_SCANNER, UPLOAD_SENDER,
+    },
+    util::{
+        close_connection, colorized_file, gen_random_filename, print_error, print_failed,
+        print_success, print_warning, read_bytes_from_file,
+    },
+};
 
 fn help() {
     println!(
@@ -31,8 +47,8 @@ fn help() {
         portscan                   Scan Ports on localhost                        SYS_socket, SYS_setsockopt, SYS_connect, SYS_close
         netcat <INPUT_FILE> <Port> Send Data in the Input File to Port            SYS_socket, SYS_setsockopt, SYS_connect, SYS_close
                                    and Receive Output
-        http                       HTTP shell                                     SYS_socket, SYS_setsockopt, SYS_connect, SYS_close
-        redis                      Redis shell                                    SYS_socket, SYS_setsockopt, SYS_connect, SYS_close
+        http_shell                 HTTP Interactive Shell                         SYS_socket, SYS_setsockopt, SYS_connect, SYS_close
+        redis_shell                Redis Interactive Shell                        SYS_socket, SYS_setsockopt, SYS_connect, SYS_close
         exit                       Exit shell                                     N/A
         quit                       Exit shell                                     N/A
 "
@@ -76,7 +92,11 @@ fn dir(config: &Config, verbose: bool, directory: &str) -> Result<(), Box<dyn Er
             println!("{}", directory);
             return Ok(());
         }
-        let message = format!("dir: cannot access '{}': {}", directory, Errno(errno as i32));
+        let message = format!(
+            "dir: cannot access '{}': {}",
+            directory,
+            Errno(errno as i32)
+        );
         return Err(message.into());
     }
 
@@ -95,7 +115,7 @@ fn dir(config: &Config, verbose: bool, directory: &str) -> Result<(), Box<dyn Er
         let mut _d_off_buff = [0; 8];
         conn.read_exact(&mut _d_off_buff)?;
         let _d_off = u64::from_le_bytes(_d_off_buff);
-        
+
         let mut d_reclen_buff = [0; 2];
         conn.read_exact(&mut d_reclen_buff)?;
         let d_reclen = u16::from_le_bytes(d_reclen_buff);
@@ -162,7 +182,11 @@ fn cat(config: &Config, verbose: bool, file_name: &str) -> Result<(), Box<dyn Er
         }
         if beacon < 0 {
             let errno = -beacon;
-            let message = format!("cat: cannot access '{}': {}", file_name, Errno(errno as i32));
+            let message = format!(
+                "cat: cannot access '{}': {}",
+                file_name,
+                Errno(errno as i32)
+            );
             return Err(message.into());
         }
         let chunk_len = beacon as u64;
@@ -248,7 +272,6 @@ fn pwd(config: &Config) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-
 fn download(config: &Config, file_name: &str) -> Result<(), Box<dyn Error>> {
     if config.conn.is_none() {
         return Err("Server not connected".into());
@@ -280,7 +303,11 @@ fn download(config: &Config, file_name: &str) -> Result<(), Box<dyn Error>> {
         }
         if beacon < 0 {
             let errno = -beacon;
-            let message = format!("download: cannot access '{}': {}", file_name, Errno(errno as i32));
+            let message = format!(
+                "download: cannot access '{}': {}",
+                file_name,
+                Errno(errno as i32)
+            );
             return Err(message.into());
         }
         let chunk_len = beacon as u64;
@@ -290,7 +317,10 @@ fn download(config: &Config, file_name: &str) -> Result<(), Box<dyn Error>> {
     }
 
     let original_file_path = Path::new(file_name);
-    let original_file_name = original_file_path.file_name().unwrap_or_default().to_string_lossy();
+    let original_file_name = original_file_path
+        .file_name()
+        .unwrap_or_default()
+        .to_string_lossy();
     let stored_file_name = gen_random_filename(&original_file_name);
     let mut stored_file = File::create(&stored_file_name)?;
     stored_file.write_all(&file_content_buff)?;
@@ -312,14 +342,17 @@ fn upload(config: &Config, file_name: &str, perm: u16) -> Result<(), Box<dyn Err
     match File::open(file_name) {
         Ok(f) => {
             original_file = f;
-        },
+        }
         Err(err) => {
             let message = format!("upload: cannot access local file '{}': {}", file_name, err);
             return Err(message.into());
         }
     }
     let original_file_path = Path::new(file_name);
-    let original_file_name = original_file_path.file_name().unwrap_or_default().to_string_lossy();
+    let original_file_name = original_file_path
+        .file_name()
+        .unwrap_or_default()
+        .to_string_lossy();
     let upload_file_name = gen_random_filename(&original_file_name);
     let upload_file_name_len = (upload_file_name.len() + 1) as u16;
 
@@ -346,7 +379,11 @@ fn upload(config: &Config, file_name: &str, perm: u16) -> Result<(), Box<dyn Err
     let file_content_len = file_content_buff.len();
     loop {
         let remain_len = file_content_len - index;
-        let write_size = if remain_len < 0x1000 { remain_len } else { 0x1000 };
+        let write_size = if remain_len < 0x1000 {
+            remain_len
+        } else {
+            0x1000
+        };
         let write_size_buff = write_size.to_le_bytes();
         conn.write(&write_size_buff)?;
         if write_size == 0 {
@@ -396,14 +433,18 @@ fn rm(config: &Config, verbose: bool, file_name: &str) -> Result<(), Box<dyn Err
 
     if verbose {
         let message = format!("File '{}' removed", file_name);
-    print_success(&message);
-
+        print_success(&message);
     }
-    
+
     Ok(())
 }
 
-pub fn mv(config: &Config, verbose: bool, source_file_name: &str, dest_file_name: &str) -> Result<(), Box<dyn Error>> {
+pub fn mv(
+    config: &Config,
+    verbose: bool,
+    source_file_name: &str,
+    dest_file_name: &str,
+) -> Result<(), Box<dyn Error>> {
     if config.conn.is_none() {
         return Err("Server not connected".into());
     }
@@ -442,24 +483,41 @@ pub fn mv(config: &Config, verbose: bool, source_file_name: &str, dest_file_name
             cp(config, false, source_file_name, dest_file_name, 0o755)?;
             rm(config, false, source_file_name)?;
             if verbose {
-                let message = format!("Successfully move '{}' to '{}'", source_file_name, dest_file_name);
+                let message = format!(
+                    "Successfully move '{}' to '{}'",
+                    source_file_name, dest_file_name
+                );
                 print_success(&message);
             }
             return Ok(());
         }
-        let message = format!("mv: cannot access '{}' or '{}': {}", source_file_name, dest_file_name, Errno(errno as i32));
+        let message = format!(
+            "mv: cannot access '{}' or '{}': {}",
+            source_file_name,
+            dest_file_name,
+            Errno(errno as i32)
+        );
         return Err(message.into());
     }
 
     if verbose {
-        let message = format!("Successfully move '{}' to '{}'", source_file_name, dest_file_name);
+        let message = format!(
+            "Successfully move '{}' to '{}'",
+            source_file_name, dest_file_name
+        );
         print_success(&message);
     }
 
     Ok(())
 }
 
-pub fn cp(config: &Config, verbose: bool, source_file_name: &str, dest_file_name: &str, perm: u16) -> Result<(), Box<dyn Error>> {
+pub fn cp(
+    config: &Config,
+    verbose: bool,
+    source_file_name: &str,
+    dest_file_name: &str,
+    perm: u16,
+) -> Result<(), Box<dyn Error>> {
     if config.conn.is_none() {
         return Err("Server not connected".into());
     }
@@ -496,12 +554,20 @@ pub fn cp(config: &Config, verbose: bool, source_file_name: &str, dest_file_name
     let beacon = i64::from_le_bytes(beacon_buff);
     if beacon < 0 {
         let errno = -beacon;
-        let message = format!("cp: cannot access '{}' or '{}': {}", source_file_name, dest_file_name, Errno(errno as i32));
+        let message = format!(
+            "cp: cannot access '{}' or '{}': {}",
+            source_file_name,
+            dest_file_name,
+            Errno(errno as i32)
+        );
         return Err(message.into());
     }
 
     if verbose {
-        let message = format!("Successfully copy '{}' to '{}'", source_file_name, dest_file_name);
+        let message = format!(
+            "Successfully copy '{}' to '{}'",
+            source_file_name, dest_file_name
+        );
         print_success(&message);
     }
 
@@ -536,7 +602,11 @@ fn mkdir(config: &Config, verbose: bool, dir_name: &str, perm: u16) -> Result<()
     let beacon = i64::from_le_bytes(beacon_buff);
     if beacon < 0 {
         let errno = -beacon;
-        let message = format!("mkdir: cannot access '{}': {}", dir_name, Errno(errno as i32));
+        let message = format!(
+            "mkdir: cannot access '{}': {}",
+            dir_name,
+            Errno(errno as i32)
+        );
         return Err(message.into());
     }
 
@@ -561,7 +631,7 @@ fn rmdir(config: &Config, verbose: bool, dir_name: &str) -> Result<(), Box<dyn E
     let dir_name_len_bytes = dir_name_len.to_le_bytes();
     for i in 0..2 {
         shellcode[rmdir_sender.file_len_index + i] = dir_name_len_bytes[i];
-    }    
+    }
     shellcode.resize(SHELLCODE_LEN, 0);
 
     let mut conn = config.conn.as_ref().unwrap();
@@ -574,7 +644,11 @@ fn rmdir(config: &Config, verbose: bool, dir_name: &str) -> Result<(), Box<dyn E
     let beacon = i64::from_le_bytes(beacon_buff);
     if beacon < 0 {
         let errno = -beacon;
-        let message = format!("rmdir: cannot access '{}': {}", dir_name, Errno(errno as i32));
+        let message = format!(
+            "rmdir: cannot access '{}': {}",
+            dir_name,
+            Errno(errno as i32)
+        );
         return Err(message.into());
     }
 
@@ -671,7 +745,11 @@ pub fn portscan(config: &mut Config) -> Result<(), Box<dyn Error>> {
         open_ports.push(open_port);
     }
 
-    let open_ports_str = open_ports.iter().map(|&x| x.to_string()).collect::<Vec<String>>().join(", ");
+    let open_ports_str = open_ports
+        .iter()
+        .map(|&x| x.to_string())
+        .collect::<Vec<String>>()
+        .join(", ");
     let message = format!("Open ports: {}", open_ports_str);
     print_success(&message);
 
@@ -728,15 +806,17 @@ fn netcat(config: &Config, verbose: bool, payload: &[u8], port: u16) -> Result<(
     Ok(())
 }
 
-fn http_help() {
-    println!("
+fn http_shell_help() {
+    println!(
+        "
     Usage: <HTTP_METHOD> <HTTP_PATH> [<HTTP_QUERY>|<POST_DATA>] | exit | quit
     Examples:
         GET index.html
         GET index.php q=1&p=home
         POST index.php id=johndoe&role=admin
         exit
-    ");
+    "
+    );
 }
 
 pub fn http(config: &mut Config, port: u16) -> Result<(), Box<dyn Error>> {
@@ -748,6 +828,7 @@ pub fn http(config: &mut Config, port: u16) -> Result<(), Box<dyn Error>> {
 
     print_warning("This module is used to send simple HTTP requests");
     print_warning("If you want to send complex HTTP requests, consider using the 'netcat' command");
+    print_warning("Type 'help' for usage and examples");
 
     loop {
         let mut line = String::new();
@@ -760,51 +841,58 @@ pub fn http(config: &mut Config, port: u16) -> Result<(), Box<dyn Error>> {
             break;
         }
 
-        let mut iter = line.trim().split_whitespace();
-        if let Some(method) = iter.next() {
-            match method {
-                "help" => {
-                    http_help();
-                    continue;
-                },
-                "exit" | "quit" => {
-                    break;
-                },
-                "GET" | "POST" => {
-                    if let Some(http_path) = iter.next() {
-                        let query = match iter.next() {
-                            Some(query) => {
-                                query
-                            },
-                            None => {
-                                ""
-                            }
-                        };
-                        let http_request_str = if method == "GET" {
-                            if query.is_empty() {
-                                format!("GET /{} HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n", http_path)
-                            } else {
-                                format!("GET /{}?{} HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n", http_path, query)
-                            }
-                        } else {
-                            format!("POST /{} HTTP/1.1\r\nHost: localhost\r\nContent-Type: application/x-www-form-urlencoded\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}\r\n\r\n", http_path, query.len(), query)
-                        };
-                        println!("{}", http_request_str);
-                        let http_request = http_request_str.as_bytes();
-                        netcat(config, true, &http_request, port)?;
-                    } else {
-                        print_failed("Error: no path specified");
-                    }
-                },
-                _ => {
-                    let message = format!("Error: unsupported method {}", method);
-                    print_failed(&message);
-                    print_warning("If you want to send complex HTTP requests, consider using the 'netcat' command");
-                    http_help();
-                    continue
-                }
-            };
+        let cmds = shlex::split(&line).unwrap_or_default();
+        if cmds.len() == 0 {
+            http_shell_help();
+            continue;
         }
+        let method: &str = cmds[0].as_ref();
+        match method {
+            "help" => {
+                http_shell_help();
+                continue;
+            }
+            "exit" | "quit" => {
+                break;
+            }
+            "GET" | "get" => {
+                if cmds.len() == 1 {
+                    http_shell_help();
+                    continue;
+                }
+                let path: &str = cmds[1].as_ref();
+                let query = if cmds.len() == 2 {
+                    ""
+                } else {
+                    cmds[2].as_ref()
+                };
+                let http_request_str = format!(
+                    "GET /{}?{} HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
+                    path, query
+                );
+                let http_request = http_request_str.as_bytes();
+                netcat(config, true, &http_request, port)?;
+            }
+            "POST" | "post" => {
+                if cmds.len() < 3 {
+                    print_failed("Error: http shell: POST: no data provided");
+                    http_shell_help();
+                    continue;
+                }
+                let path: &str = cmds[1].as_ref();
+                let query: &str = cmds[2].as_ref();
+                let http_request_str = format!("POST /{} HTTP/1.1\r\nHost: localhost\r\nContent-Type: application/x-www-form-urlencoded\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}\r\n\r\n", path, query.len(), query);
+                let http_request = http_request_str.as_bytes();
+                netcat(config, true, &http_request, port)?;
+            }
+            _ => {
+                let message = format!("Error: unsupported method {}", method);
+                print_failed(&message);
+                print_warning("If you want to send complex HTTP requests, consider using the 'netcat' command");
+                http_shell_help();
+                continue;
+            }
+        };
     }
 
     println!("");
@@ -819,7 +907,7 @@ pub fn redis(config: &mut Config, port: u16) -> Result<(), Box<dyn Error>> {
     let mut stdout_handle = stdout.lock();
 
     let set_timeout = "*4\r\n$6\r\nconfig\r\n$3\r\nset\r\n$7\r\ntimeout\r\n$1\r\n1\r\n".as_bytes();
-    netcat(config, false, &set_timeout, port)?;   
+    netcat(config, false, &set_timeout, port)?;
 
     loop {
         let mut line = String::new();
@@ -831,8 +919,8 @@ pub fn redis(config: &mut Config, port: u16) -> Result<(), Box<dyn Error>> {
         if bytes_read == 0 {
             break;
         }
-        let cmds: Vec<&str> = line.trim().split_whitespace().collect();
-        if cmds[0] == "exit" || cmds[0] == "quit" {
+        let cmds = shlex::split(&line).unwrap_or_default();
+        if cmds.len() == 0 || cmds[0] == "exit" || cmds[0] == "quit" {
             break;
         }
 
@@ -846,7 +934,7 @@ pub fn redis(config: &mut Config, port: u16) -> Result<(), Box<dyn Error>> {
             let cmd_len_str = cmd.len().to_string();
             payload_str.push_str(&cmd_len_str);
             payload_str.push_str("\r\n");
-            payload_str.push_str(cmd);
+            payload_str.push_str(&cmd);
             payload_str.push_str("\r\n");
         }
 
@@ -886,252 +974,329 @@ pub fn prompt(config: &mut Config) -> Result<(), Box<dyn Error>> {
                 break;
             }
         }
-        let mut iter = line.trim().split_whitespace();
-        if let Some(command) = iter.next() {
-            match command {
-                "help" => {
-                    help();
-                },
-                "ls" | "dir" => {
-                    let file_name = match iter.next() {
-                        Some(file_name) => file_name,
-                        None => ".",
-                    };
-                    if let Err(err) = dir(config, true, file_name) {
-                        print_error(err);
-                    }
-                },
-                "cat" | "type" => {
-                    if let Some(file_name) = iter.next() {
-                        if let Err(err) = cat(config, true, file_name) {
-                            print_error(err);
-                        }
+
+        let cmds = shlex::split(&line).unwrap_or_default();
+        if cmds.len() == 0 {
+            help();
+            continue;
+        }
+        let command = cmds[0].as_ref();
+        match command {
+            "help" => {
+                help();
+            },
+            "dir" | "ls" => {
+                if cmds.len() >= 3 {
+                    print_failed("Error: dir: too many arguments");
+                    continue;
+                }
+                let dir_name = if cmds.len() == 1 {
+                    "."
+                } else {
+                    cmds[1].as_ref()
+                };
+                if let Err(err) = dir(config, true, dir_name) {
+                    print_error(err);
+                }
+            },
+            "cat" | "type" => {
+                if cmds.len() == 1 {
+                    print_failed("Error: cat: no file specified");
+                    continue;
+                }
+                if cmds.len() >= 3 {
+                    print_failed("Error: cat: too many arguments");
+                    continue;
+                }
+                let file_name = cmds[1].as_ref();
+                if let Err(err) = cat(config, true, file_name) {
+                    print_error(err);
+                }
+            },
+            "cd" => {
+                if cmds.len() >= 3 {
+                    print_failed("Error: cd: too many arguments");
+                    continue;
+                }
+                let file_name = if cmds.len() == 1 {
+                    "."
+                } else {
+                    cmds[1].as_ref()
+                };
+                if let Err(err) = cd(config, true, file_name) {
+                    print_error(err);
+                }
+            },
+            "pwd" => {
+                if cmds.len() >= 2 {
+                    print_failed("Error: pwd: too many arguments");
+                    continue;
+                }
+                if let Err(err) = pwd(config) {
+                    print_error(err);
+                }
+            },
+            "download" => {
+                if cmds.len() >= 3 {
+                    print_failed("Error: download: too many arguments");
+                    continue;
+                }
+                if cmds.len() == 1 {
+                    print_failed("Error: download: no file specified");
+                    continue;
+                }
+                let file_name = cmds[1].as_ref();
+                if let Err(err) = download(config, file_name) {
+                    print_error(err);
+                }
+            },
+            "upload" => {
+                if cmds.len() >= 4 {
+                    print_failed("Error: download: too many arguments");
+                    continue;
+                }
+                if cmds.len() == 1 {
+                    print_failed("Error: upload: no file specified");
+                    continue;
+                }
+                let file_name = cmds[1].as_ref();
+                let perm_option = if cmds.len() == 2 {
+                    Some(0o644)
+                } else {
+                    let perm_str = cmds[2].as_ref();
+                    if let Ok(perm) = u16::from_str_radix(perm_str, 8) {
+                        Some(perm)
                     } else {
-                        print_failed("Error: cat: no file specified")
+                        None
                     }
-                },
-                "cd" => {
-                    if let Some(file_name) = iter.next() {
-                        if let Err(err) = cd(config, true, file_name) {
-                            print_error(err);
-                        }
-                    }
-                },
-                "pwd" => {
-                    if let Err(err) = pwd(config) {
-                        print_error(err);
-                    }
-                },
-                "download" => {
-                    if let Some(file_name) = iter.next() {
-                        if let Err(err) = download(config, file_name) {
-                            print_error(err);
-                        }
+                };
+                if perm_option.is_none() {
+                    print_failed("Error: upload: invalid permission");
+                    continue;
+                }
+                let perm = perm_option.unwrap();
+                if let Err(err) = upload(config, file_name, perm) {
+                    print_error(err);
+                }
+            },
+            "rm" => {
+                if cmds.len() == 1 {
+                    print_failed("Error: rm: no file specified");
+                    continue;
+                }
+                if cmds.len() >= 3 {
+                    print_failed("Error: rm: too many arguments");
+                    continue;
+                }
+                let file_name = cmds[1].as_ref();
+                if let Err(err) = rm(config, true, file_name) {
+                    print_error(err);
+                }
+            }
+            "mv" => {
+                if cmds.len() == 1 {
+                    print_failed("Error: mv: no source file specified");
+                    continue;
+                }
+                if cmds.len() == 2 {
+                    print_failed("Error: mv: no destination file specified");
+                    continue;
+                }
+                if cmds.len() >= 4 {
+                    print_failed("Error: mv: too many arguments");
+                    continue;
+                }
+                let source_file_name = cmds[1].as_ref();
+                let dest_file_name = cmds[2].as_ref();
+                if let Err(err) = mv(config, true, source_file_name, dest_file_name) {
+                    print_error(err);
+                }
+            },
+            "cp" => {
+                if cmds.len() == 1 {
+                    print_failed("Error: cp: no source file specified");
+                    continue;
+                }
+                if cmds.len() == 2 {
+                    print_failed("Error: cp: no destination file specified");
+                    continue;
+                }
+                if cmds.len() >= 5 {
+                    print_failed("Error: cp: too many arguments");
+                    continue;
+                }
+                let source_file_name = cmds[1].as_ref();
+                let dest_file_name = cmds[2].as_ref();
+                let perm_option = if cmds.len() == 3 {
+                    Some(0o644)
+                } else {
+                    let perm_str = cmds[3].as_ref();
+                    if let Ok(perm) = u16::from_str_radix(perm_str, 8) {
+                        Some(perm)
                     } else {
-                        print_failed("Error: download: no file specified")
+                        None
                     }
-                },
-                "upload" => {
-                    if let Some(file_name) = iter.next() {
-                        let perm_option = match iter.next() {
-                            Some(perm_str) => {
-                                if let Ok(perm) = u16::from_str_radix(perm_str, 8) {
-                                    Some(perm)
-                                } else {
-                                    None
-                                }
-                            },
-                            None => { Some(0o644) },
-                        };
-                        if let Some(perm) = perm_option {
-                            if let Err(err) = upload(config, file_name, perm) {
-                                print_error(err);
-                            }
-                        } else {
-                            print_failed("Error: upload: invalid permission")
-                        }
-                        
+                };
+                if perm_option.is_none() {
+                    print_failed("Error: cp: invalid permission");
+                    continue;
+                }
+                let perm = perm_option.unwrap();
+                if let Err(err) = cp(config, true, source_file_name, dest_file_name, perm) {
+                    print_error(err);
+                }
+            }
+            "mkdir" => {
+                if cmds.len() == 1 {
+                    print_failed("Error: mkdir: no directory specified");
+                    continue;
+                }
+                if cmds.len() >= 4 {
+                    print_failed("Error: mkdir: too many arguments");
+                    continue;
+                }
+                let file_name = cmds[1].as_ref();
+                let perm_option = if cmds.len() == 2 {
+                    Some(0o755)
+                } else {
+                    let perm_str = cmds[2].as_ref();
+                    if let Ok(perm) = u16::from_str_radix(perm_str, 8) {
+                        Some(perm)
                     } else {
-                        print_failed("Error: upload: no file specified")
+                        None
                     }
-                },
-                "rm" => {
-                    if let Some(file_name) = iter.next() {
-                        if let Err(err) = rm(config, true, file_name) {
-                            print_error(err);
-                        }
+                };
+                if perm_option.is_none() {
+                    print_failed("Error: mkdir: invalid permission");
+                    continue;
+                }
+                let perm = perm_option.unwrap();
+                if let Err(err) = mkdir(config, true, file_name, perm) {
+                    print_error(err);
+                }
+            },
+            "rmdir" => {
+                if cmds.len() == 1 {
+                    print_failed("Error: rmdir: no directory specified");
+                    continue;
+                }
+                if cmds.len() >= 3 {
+                    print_failed("Error: rmdir: too many arguments");
+                    continue;
+                }
+                let file_name = cmds[1].as_ref();
+                if let Err(err) = rmdir(config, true, file_name) {
+                    print_error(err);
+                }
+            }
+            "getuid" => {
+                if cmds.len() != 1 {
+                    print_failed("Error: getuid: too many arguments");
+                    continue;
+                }
+                if let Err(err) = getuid(config) {
+                    print_error(err);
+                }
+            }
+            "getgid" => {
+                if cmds.len() != 1 {
+                    print_failed("Error: getgid: too many arguments");
+                    continue;
+                }
+                if let Err(err) = getgid(config) {
+                    print_error(err);
+                }
+            }
+            "portscan" => {
+                if cmds.len() != 1 {
+                    print_failed("Error: portscan: too many arguments");
+                    continue;
+                }
+                if let Err(err) = portscan(config) {
+                    print_error(err);
+                }
+            }
+            "netcat" => {
+                if cmds.len() == 1 {
+                    print_failed("Error: netcat: no input file specified");
+                    continue;
+                }
+                if cmds.len() == 2 {
+                    print_failed("Error: netcat: no port specified");
+                    continue;
+                }
+                if cmds.len() >= 4 {
+                    print_failed("Error: netcat: too many arguments");
+                    continue;
+                }
+                let input_file_name = cmds[1].as_ref();
+                let data_result = read_bytes_from_file(input_file_name);
+                if data_result.is_err() {
+                    let err = data_result.unwrap_err();
+                    print_error(err);
+                    continue;
+                }
+                let data = data_result.unwrap();
+                let port_str = cmds[2].as_ref();
+                let port_result = u16::from_str_radix(port_str, 10);
+                if port_result.is_err() {
+                    print_failed("Error: netcat: invalid port");
+                    continue;
+                }
+                let port = port_result.unwrap();
+                if let Err(err) = netcat(config, true, &data, port) {
+                    print_error(err);
+                }
+            }
+            "redis_shell" => {
+                let port = if cmds.len() == 1 {
+                    6379
+                } else {
+                    let port_str = cmds[1].as_ref();
+                    if let Ok(port) = u16::from_str_radix(port_str, 10) {
+                        port
                     } else {
-                        print_failed("Error: rm: no file specified");
+                        6379
                     }
-                },
-                "mv" => {
-                    if let Some(source_file_name) = iter.next() {
-                        if let Some(dest_file_name) = iter.next() {
-                            if let Err(err) = mv(config, true, source_file_name, dest_file_name) {
-                                print_error(err);
-                            }
-                        } else {
-                            print_failed("Error: mv: no destination file specified");
-                        }
+                };
+                if let Err(err) = redis(config, port) {
+                    print_error(err);
+                }
+            }
+            "http_shell" => {
+                let port = if cmds.len() == 1 {
+                    80
+                } else {
+                    let port_str = cmds[1].as_ref();
+                    if let Ok(port) = u16::from_str_radix(port_str, 10) {
+                        port
                     } else {
-                        print_failed("Error: mv: no source file specified");
+                        80
                     }
-                },
-                "cp" => {
-                    if let Some(source_file_name) = iter.next() {
-                        if let Some(dest_file_name) = iter.next() {
-                            let perm_option = match iter.next() {
-                                Some(perm_str) => {
-                                    if let Ok(perm) = u16::from_str_radix(perm_str, 8) {
-                                        Some(perm)
-                                    } else {
-                                        None
-                                    }
-                                },
-                                None => { Some(0o644) },
-                            };
-                            if let Some(perm) = perm_option {
-                                if let Err(err) = cp(config, true, source_file_name, dest_file_name, perm) {
-                                    print_error(err);
-                                }
-                            } else {
-                                print_failed("Error: upload: invalid permission")
-                            }
-                        } else {
-                            print_failed("Error: cp: no destination file specified");
-                        }
-                    } else {
-                        print_failed("Error: cp: no source file specified");
-                    }
-                },
-                "mkdir" => {
-                    if let Some(file_name) = iter.next() {
-                        let perm_option = match iter.next() {
-                            Some(perm_str) => {
-                                if let Ok(perm) = u16::from_str_radix(perm_str, 8) {
-                                    Some(perm)
-                                } else {
-                                    None
-                                }
-                            },
-                            None => { Some(0o755) },
-                        };
-                        if let Some(perm) = perm_option {
-                            if let Err(err) = mkdir(config, true, file_name, perm) {
-                                print_error(err);
-                            }
-                        } else {
-                            print_failed("Error: mkdir: invalid permission")
-                        }
-                    } else {
-                        print_failed("Error: mkdir: no file specified");
-                    }
-                },
-                "rmdir" => {
-                    if let Some(file_name) = iter.next() {
-                        if let Err(err) = rmdir(config, true, file_name) {
-                            print_error(err);
-                        }
-                    } else {
-                        print_failed("Error: rmdir: no file specified");
-                    }
-                },
-                "getuid" => {
-                    if let Err(err) = getuid(config) {
-                        print_error(err);
-                    }
-                },
-                "getgid" => {
-                    if let Err(err) = getgid(config) {
-                        print_error(err);
-                    }
-                },
-                "portscan" => {
-                    if let Err(err) = portscan(config) {
-                        print_error(err);
-                    }
-                },
-                "netcat" => {
-                    if let Some(file_name) = iter.next() {
-                        match read_bytes_from_file(file_name) {
-                            Ok(data) => {
-                                if let Some(port_str) = iter.next() {
-                                    if let Ok(port) = port_str.parse::<u16>() {
-                                        if let Err(err) = netcat(config, true, &data, port) {
-                                            print_error(err);
-                                        }
-                                    } else {
-                                        let message = format!("Error: netcat: invalid port {}", port_str);
-                                        print_failed(&message);
-                                    }
-                                } else {
-                                    print_failed("Error: netcat: no port specified");
-                                }
-                            },
-                            Err(err) => {
-                                print_error(err);
-                            }
-                        }
-                    } else {
-                        print_failed("Error: netcat: no input file specified");
-                    }
-                },
-                "redis" => {
-                    let port = match iter.next() {
-                        Some(port_str) => {
-                            if let Ok(port) = port_str.parse::<u16>() {
-                                port
-                            } else {
-                                6379
-                            }
-                        },
-                        None => {
-                            6379
-                        }
-                    };
-                    if let Err(err) = redis(config, port) {
-                        print_error(err);
-                    }
-                },
-                "http" => {
-                    let port = match iter.next() {
-                        Some(port_str) => {
-                            if let Ok(port) = port_str.parse::<u16>() {
-                                port
-                            } else {
-                                80
-                            }
-                        },
-                        None => {
-                            80
-                        }
-                    };
-                    if let Err(err) = http(config, port) {
-                        print_error(err);
-                    }
-                },
-                "exit" | "quit" => {
-                    if let Ok(want_exit) = exit() {
-                        if want_exit {
-                            close_connection(config);
-                            break;
-                        }
-                    } else {
-                        /* Close the connection in case things go wrong */
-                        /* Probably not a good idea here, but I'll fix this later */
+                };
+                if let Err(err) = http(config, port) {
+                    print_error(err);
+                }
+            }
+            "exit" | "quit" => {
+                if let Ok(want_exit) = exit() {
+                    if want_exit {
                         close_connection(config);
                         break;
                     }
-                },
-                _ => {
-                    let message = format!("Unknown command '{}'", command);
-                    print_failed(&message);
-                    help();
+                } else {
+                    /* Close the connection in case things go wrong */
+                    /* Probably not a good idea here, but I'll fix this later */
+                    close_connection(config);
+                    break;
                 }
-            };
-        } else {
-            help();
-        }
+            }
+            _ => {
+                let message = format!("Unknown command '{}'", command);
+                print_failed(&message);
+                help();
+            }
+        };
     }
 
     println!("");

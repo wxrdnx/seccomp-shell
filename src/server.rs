@@ -64,14 +64,14 @@ fn set(config: &mut Config, option: &str, value: &str) {
                         if let IpAddr::V4(ipv4_addr) = ip {
                             config.server_host = ipv4_addr;
                             found = true;
-                            let success_message = format!("Host set to '{}'", config.server_host.to_string());
-                            print_success(&success_message);
+                            let message = format!("Host set to '{}'", config.server_host.to_string());
+                            print_success(&message);
                             break;
                         }
                     }
                     if !found {
-                        let error_message= format!("Error: no ip matched to {}", value);
-                        print_failed(&error_message);
+                        let message= format!("Error: no ip matched to {}", value);
+                        print_failed(&message);
                     }
                 },
                 Err(err) => {
@@ -82,11 +82,11 @@ fn set(config: &mut Config, option: &str, value: &str) {
         "port" => {
             if let Ok(port) = value.parse::<u16>() {
                 config.server_port = port;
-                let success_message = format!("Port set to '{}'", config.server_port);
-                print_success(&success_message);
+                let message = format!("Port set to '{}'", config.server_port);
+                print_success(&message);
             } else {
-                let error_message= format!("Error: invalid port '{}'", value);
-                print_failed(&error_message);
+                let message= format!("Error: invalid port '{}'", value);
+                print_failed(&message);
             }
         },
         "format" => {
@@ -98,13 +98,13 @@ fn set(config: &mut Config, option: &str, value: &str) {
                     config.sc_fmt = ScFmt::ScFmtHex;
                 },
                 _ => {
-                    let error_message= format!("Error: invalid format '{}'", value);
-                    print_failed(&error_message);
+                    let message= format!("Error: invalid format '{}'", value);
+                    print_failed(&message);
                     return;
                 }
             }
-            let success_message = format!("Format set to '{}'", config.sc_fmt);
-            print_success(&success_message);
+            let message = format!("Format set to '{}'", config.sc_fmt);
+            print_success(&message);
         },
         "read_syscall" => {
             match value {
@@ -120,8 +120,8 @@ fn set(config: &mut Config, option: &str, value: &str) {
                     return;
                 },
             }
-            let success_message = format!("Format set to '{}'", config.read_syscall);
-            print_success(&success_message);
+            let message = format!("Format set to '{}'", config.read_syscall);
+            print_success(&message);
         },
         _ => {
             let message = format!("Invalid option '{}'", option);
@@ -195,48 +195,48 @@ pub fn prompt(config: &mut Config) -> Result<(), Box<dyn Error>> {
         if bytes_read == 0 {
             break;
         }
-        let mut iter = line.trim().split_whitespace();
-        if let Some(command) = iter.next() {
-            match command {
-                "help" => {
-                    help();
-                },
-                "options" => {
-                    option_help(config);
-                },
-                "set" => {
-                    if let Some(option) = iter.next() {
-                        if let Some(value) = iter.next() {
-                            set(config, option, value);
-                        } else {
-                            print_failed("No value specified");
-                            help();
-                        }
-                    } else {
-                        print_failed("No option specified");
-                        help();
-                    }
-                },
-                "run" => {
-                    if let Err(err) = run(config) {
-                        let message = format!("Error: {}", err);
-                        print_failed(&message);
-                    }
-                },
-                "close" => {
-                    close_connection(config);
-                },
-                "back" => {
-                    break;
-                },
-                _ => {
-                    let message = format!("Unknown command {}", command);
-                    print_failed(&message);
-                    help();
-                }
-            };
-        } else {
+        let cmds = shlex::split(&line).unwrap_or_default();
+        if cmds.len() == 0 {
             help();
+            continue;
+        }
+        let command = cmds[0].as_ref();
+        match command {
+            "help" => {
+                help();
+            },
+            "options" => {
+                option_help(config);
+            },
+            "set" => {
+                if cmds.len() == 1 {
+                    print_failed("No option specified");
+                    help();
+                } else if cmds.len() == 2 {
+                    print_failed("No value specified");
+                    help();
+                } else {
+                    let option = cmds[1].as_ref();
+                    let value = cmds[2].as_ref();
+                    set(config, option, value);
+                }
+            },
+            "run" => {
+                if let Err(err) = run(config) {
+                    print_error(err);
+                }
+            },
+            "close" => {
+                close_connection(config);
+            },
+            "back" => {
+                break;
+            },
+            _ => {
+                let message = format!("Unknown command {}", command);
+                print_failed(&message);
+                help();
+            }
         }
     }
 

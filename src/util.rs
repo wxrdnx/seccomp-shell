@@ -92,7 +92,7 @@ pub fn colorized_file(file_name: &str, d_type: u8) -> String {
 pub fn gen_random_filename(original_name: &str) -> String {
     let rand_stream: Vec<u8> = thread_rng().sample_iter(&Alphanumeric).take(10).collect();
     let rand_string = String::from_utf8_lossy(&rand_stream);
-    format!("/tmp/{}_{}", rand_string, original_name)
+    format!("/tmp/{}_{}", original_name, rand_string)
 }
 
 pub fn read_bytes_from_file(file_name: &str) -> Result<Vec<u8>, Box<dyn Error>> {

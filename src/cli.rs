@@ -1,9 +1,12 @@
 use colored::Colorize;
-use std::{error::Error, io::{self, Write}};
+use std::{
+    error::Error,
+    io::{self, Write},
+};
 
-use crate::{config::Config, shell};
 use crate::server;
 use crate::util::print_failed;
+use crate::{config::Config, shell};
 
 fn help() {
     println!(
@@ -37,36 +40,37 @@ pub fn prompt(config: &mut Config) -> Result<(), Box<dyn Error>> {
         if bytes_read == 0 {
             break;
         }
-        let mut iter = line.trim().split_whitespace();
-        if let Some(command) = iter.next() {
-            match command {
-                "help" => {
-                    help();
-                },
-                "server" => {
-                    server::prompt(config)?;
-                },
-                "shell" => {
-                    if !config.conn.is_none() {
-                        print_failed("Server not connected");
-                    } else {
-                        shell::prompt(config)?;
-                    }
-                },
-                "back" => {
-                    continue;
-                },
-                "exit" => {
-                    break;
-                },
-                _ => {
-                    let message = format!("Unknown command {}", command);
-                    print_failed(&message);
-                    help();
-                },
-            };
-        } else {
+        let cmds = shlex::split(&line).unwrap_or_default();
+        if cmds.len() == 0 {
             help();
+            continue;
+        }
+        let command = cmds[0].as_ref();
+        match command {
+            "help" => {
+                help();
+            }
+            "server" => {
+                server::prompt(config)?;
+            }
+            "shell" => {
+                if !config.conn.is_none() {
+                    print_failed("Server not connected");
+                } else {
+                    shell::prompt(config)?;
+                }
+            }
+            "back" => {
+                continue;
+            }
+            "exit" => {
+                break;
+            }
+            _ => {
+                let message = format!("Unknown command {}", command);
+                print_failed(&message);
+                help();
+            }
         }
     }
 
