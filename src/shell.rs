@@ -47,8 +47,8 @@ fn help() {
         portscan                   Scan Ports on localhost                        SYS_socket, SYS_setsockopt, SYS_connect, SYS_close
         netcat <INPUT_FILE> <Port> Send Data in the Input File to Port            SYS_socket, SYS_setsockopt, SYS_connect, SYS_close
                                    and Receive Output
-        http_shell                 HTTP Interactive Shell                         SYS_socket, SYS_setsockopt, SYS_connect, SYS_close
-        redis_shell                Redis Interactive Shell                        SYS_socket, SYS_setsockopt, SYS_connect, SYS_close
+        http-shell                 HTTP Interactive Shell                         SYS_socket, SYS_setsockopt, SYS_connect, SYS_close
+        redis-cli                  Simple Redis Client                            SYS_socket, SYS_setsockopt, SYS_connect, SYS_close
         exit                       Exit shell                                     N/A
         quit                       Exit shell                                     N/A
 "
@@ -869,66 +869,68 @@ pub fn http(config: &mut Config, port: u16) -> Result<(), Box<dyn Error>> {
             break;
         }
 
-        let cmds = shlex::split(&line).unwrap_or_default();
-        if cmds.len() == 0 {
-            http_shell_help();
-            continue;
+        if let Some(cmds) = shlex::split(&line) {
+            if cmds.len() == 0 {
+                http_shell_help();
+                continue;
+            }
+            let method: &str = cmds[0].as_ref();
+            match method {
+                "help" => {
+                    http_shell_help();
+                    continue;
+                }
+                "exit" | "quit" => {
+                    break;
+                }
+                "GET" | "get" => {
+                    if cmds.len() == 1 {
+                        http_shell_help();
+                        continue;
+                    }
+                    let path: &str = cmds[1].as_ref();
+                    let query = if cmds.len() == 2 {
+                        ""
+                    } else {
+                        cmds[2].as_ref()
+                    };
+                    let http_request_str = format!(
+                        "GET /{}?{} HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
+                        path, query
+                    );
+                    let http_request = http_request_str.as_bytes();
+                    netcat(config, true, &http_request, port)?;
+                }
+                "POST" | "post" => {
+                    if cmds.len() < 3 {
+                        print_failed("Error: http shell: POST: no data provided");
+                        http_shell_help();
+                        continue;
+                    }
+                    let path: &str = cmds[1].as_ref();
+                    let query: &str = cmds[2].as_ref();
+                    let http_request_str = format!("POST /{} HTTP/1.1\r\nHost: localhost\r\nContent-Type: application/x-www-form-urlencoded\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}\r\n\r\n", path, query.len(), query);
+                    let http_request = http_request_str.as_bytes();
+                    netcat(config, true, &http_request, port)?;
+                }
+                _ => {
+                    let message = format!("Error: unsupported method {}", method);
+                    print_failed(&message);
+                    print_warning("If you want to send complex HTTP requests, consider using the 'netcat' command");
+                    http_shell_help();
+                    continue;
+                }
+            };
+        } else {
+            print_failed("http-shell: parse error");
         }
-        let method: &str = cmds[0].as_ref();
-        match method {
-            "help" => {
-                http_shell_help();
-                continue;
-            }
-            "exit" | "quit" => {
-                break;
-            }
-            "GET" | "get" => {
-                if cmds.len() == 1 {
-                    http_shell_help();
-                    continue;
-                }
-                let path: &str = cmds[1].as_ref();
-                let query = if cmds.len() == 2 {
-                    ""
-                } else {
-                    cmds[2].as_ref()
-                };
-                let http_request_str = format!(
-                    "GET /{}?{} HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
-                    path, query
-                );
-                let http_request = http_request_str.as_bytes();
-                netcat(config, true, &http_request, port)?;
-            }
-            "POST" | "post" => {
-                if cmds.len() < 3 {
-                    print_failed("Error: http shell: POST: no data provided");
-                    http_shell_help();
-                    continue;
-                }
-                let path: &str = cmds[1].as_ref();
-                let query: &str = cmds[2].as_ref();
-                let http_request_str = format!("POST /{} HTTP/1.1\r\nHost: localhost\r\nContent-Type: application/x-www-form-urlencoded\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}\r\n\r\n", path, query.len(), query);
-                let http_request = http_request_str.as_bytes();
-                netcat(config, true, &http_request, port)?;
-            }
-            _ => {
-                let message = format!("Error: unsupported method {}", method);
-                print_failed(&message);
-                print_warning("If you want to send complex HTTP requests, consider using the 'netcat' command");
-                http_shell_help();
-                continue;
-            }
-        };
     }
-
     println!("");
     Ok(())
 }
 
 pub fn redis(config: &mut Config, port: u16) -> Result<(), Box<dyn Error>> {
-    let ps = "redis> ".bold();
+    let ps = format!("127.0.0.1:{}> ", port);
 
     let stdin = io::stdin();
     let stdout = io::stdout();
@@ -947,28 +949,34 @@ pub fn redis(config: &mut Config, port: u16) -> Result<(), Box<dyn Error>> {
         if bytes_read == 0 {
             break;
         }
-        let cmds = shlex::split(&line).unwrap_or_default();
-        if cmds.len() == 0 || cmds[0] == "exit" || cmds[0] == "quit" {
-            break;
-        }
-
-        let mut payload_str = String::new();
-        payload_str.push('*');
-        let cmds_len_str = cmds.len().to_string();
-        payload_str.push_str(&cmds_len_str);
-        payload_str.push_str("\r\n");
-        for cmd in cmds {
-            payload_str.push('$');
-            let cmd_len_str = cmd.len().to_string();
-            payload_str.push_str(&cmd_len_str);
+        if let Some(cmds) = shlex::split(&line) {
+            if cmds.len() == 0 {
+                continue
+            }
+            if cmds[0] == "exit" || cmds[0] == "quit" {
+                break;
+            }
+    
+            let mut payload_str = String::new();
+            payload_str.push('*');
+            let cmds_len_str = cmds.len().to_string();
+            payload_str.push_str(&cmds_len_str);
             payload_str.push_str("\r\n");
-            payload_str.push_str(&cmd);
-            payload_str.push_str("\r\n");
+            for cmd in cmds {
+                payload_str.push('$');
+                let cmd_len_str = cmd.len().to_string();
+                payload_str.push_str(&cmd_len_str);
+                payload_str.push_str("\r\n");
+                payload_str.push_str(&cmd);
+                payload_str.push_str("\r\n");
+            }
+    
+            /* Small hack: set timeout to 1 every time  */
+            let payload = payload_str.as_bytes();
+            netcat(config, true, &payload, port)?;
+        } else {
+            print_failed("redis-cli: parse error");
         }
-
-        /* Small hack: set timeout to 1 every time  */
-        let payload = payload_str.as_bytes();
-        netcat(config, true, &payload, port)?;
     }
 
     println!("");
@@ -1003,328 +1011,331 @@ pub fn prompt(config: &mut Config) -> Result<(), Box<dyn Error>> {
             }
         }
 
-        let cmds = shlex::split(&line).unwrap_or_default();
-        if cmds.len() == 0 {
-            help();
-            continue;
-        }
-        let command = cmds[0].as_ref();
-        match command {
-            "help" => {
+        if let Some(cmds) = shlex::split(&line) {
+            if cmds.len() == 0 {
                 help();
-            },
-            "dir" | "ls" => {
-                if cmds.len() >= 3 {
-                    print_failed("Error: dir: too many arguments");
-                    continue;
-                }
-                let dir_name = if cmds.len() == 1 {
-                    "."
-                } else {
-                    cmds[1].as_ref()
-                };
-                if let Err(err) = dir(config, true, dir_name) {
-                    print_error(err);
-                }
-            },
-            "cat" | "type" => {
-                if cmds.len() == 1 {
-                    print_failed("Error: cat: no file specified");
-                    continue;
-                }
-                if cmds.len() >= 3 {
-                    print_failed("Error: cat: too many arguments");
-                    continue;
-                }
-                let file_name = cmds[1].as_ref();
-                if let Err(err) = cat(config, true, file_name) {
-                    print_error(err);
-                }
-            },
-            "cd" => {
-                if cmds.len() >= 3 {
-                    print_failed("Error: cd: too many arguments");
-                    continue;
-                }
-                let file_name = if cmds.len() == 1 {
-                    "."
-                } else {
-                    cmds[1].as_ref()
-                };
-                if let Err(err) = cd(config, true, file_name) {
-                    print_error(err);
-                }
-            },
-            "pwd" => {
-                if cmds.len() >= 2 {
-                    print_failed("Error: pwd: too many arguments");
-                    continue;
-                }
-                if let Err(err) = pwd(config) {
-                    print_error(err);
-                }
-            },
-            "download" => {
-                if cmds.len() >= 3 {
-                    print_failed("Error: download: too many arguments");
-                    continue;
-                }
-                if cmds.len() == 1 {
-                    print_failed("Error: download: no file specified");
-                    continue;
-                }
-                let file_name = cmds[1].as_ref();
-                if let Err(err) = download(config, file_name) {
-                    print_error(err);
-                }
-            },
-            "upload" => {
-                if cmds.len() >= 4 {
-                    print_failed("Error: download: too many arguments");
-                    continue;
-                }
-                if cmds.len() == 1 {
-                    print_failed("Error: upload: no file specified");
-                    continue;
-                }
-                let file_name = cmds[1].as_ref();
-                let perm_option = if cmds.len() == 2 {
-                    Some(0o644)
-                } else {
-                    let perm_str = cmds[2].as_ref();
-                    if let Ok(perm) = u16::from_str_radix(perm_str, 8) {
-                        Some(perm)
-                    } else {
-                        None
+                continue;
+            }
+            let command = cmds[0].as_ref();
+            match command {
+                "help" => {
+                    help();
+                },
+                "dir" | "ls" => {
+                    if cmds.len() >= 3 {
+                        print_failed("Error: dir: too many arguments");
+                        continue;
                     }
-                };
-                if perm_option.is_none() {
-                    print_failed("Error: upload: invalid permission");
-                    continue;
-                }
-                let perm = perm_option.unwrap();
-                if let Err(err) = upload(config, file_name, perm) {
-                    print_error(err);
-                }
-            },
-            "rm" => {
-                if cmds.len() == 1 {
-                    print_failed("Error: rm: no file specified");
-                    continue;
-                }
-                if cmds.len() >= 3 {
-                    print_failed("Error: rm: too many arguments");
-                    continue;
-                }
-                let file_name = cmds[1].as_ref();
-                if let Err(err) = rm(config, true, file_name) {
-                    print_error(err);
-                }
-            }
-            "mv" => {
-                if cmds.len() == 1 {
-                    print_failed("Error: mv: no source file specified");
-                    continue;
-                }
-                if cmds.len() == 2 {
-                    print_failed("Error: mv: no destination file specified");
-                    continue;
-                }
-                if cmds.len() >= 4 {
-                    print_failed("Error: mv: too many arguments");
-                    continue;
-                }
-                let source_file_name = cmds[1].as_ref();
-                let dest_file_name = cmds[2].as_ref();
-                if let Err(err) = mv(config, true, source_file_name, dest_file_name) {
-                    print_error(err);
-                }
-            },
-            "cp" => {
-                if cmds.len() == 1 {
-                    print_failed("Error: cp: no source file specified");
-                    continue;
-                }
-                if cmds.len() == 2 {
-                    print_failed("Error: cp: no destination file specified");
-                    continue;
-                }
-                if cmds.len() >= 5 {
-                    print_failed("Error: cp: too many arguments");
-                    continue;
-                }
-                let source_file_name = cmds[1].as_ref();
-                let dest_file_name = cmds[2].as_ref();
-                let perm_option = if cmds.len() == 3 {
-                    Some(0o644)
-                } else {
-                    let perm_str = cmds[3].as_ref();
-                    if let Ok(perm) = u16::from_str_radix(perm_str, 8) {
-                        Some(perm)
+                    let dir_name = if cmds.len() == 1 {
+                        "."
                     } else {
-                        None
+                        cmds[1].as_ref()
+                    };
+                    if let Err(err) = dir(config, true, dir_name) {
+                        print_error(err);
                     }
-                };
-                if perm_option.is_none() {
-                    print_failed("Error: cp: invalid permission");
-                    continue;
-                }
-                let perm = perm_option.unwrap();
-                if let Err(err) = cp(config, true, source_file_name, dest_file_name, perm) {
-                    print_error(err);
-                }
-            }
-            "mkdir" => {
-                if cmds.len() == 1 {
-                    print_failed("Error: mkdir: no directory specified");
-                    continue;
-                }
-                if cmds.len() >= 4 {
-                    print_failed("Error: mkdir: too many arguments");
-                    continue;
-                }
-                let file_name = cmds[1].as_ref();
-                let perm_option = if cmds.len() == 2 {
-                    Some(0o755)
-                } else {
-                    let perm_str = cmds[2].as_ref();
-                    if let Ok(perm) = u16::from_str_radix(perm_str, 8) {
-                        Some(perm)
-                    } else {
-                        None
+                },
+                "cat" | "type" => {
+                    if cmds.len() == 1 {
+                        print_failed("Error: cat: no file specified");
+                        continue;
                     }
-                };
-                if perm_option.is_none() {
-                    print_failed("Error: mkdir: invalid permission");
-                    continue;
-                }
-                let perm = perm_option.unwrap();
-                if let Err(err) = mkdir(config, true, file_name, perm) {
-                    print_error(err);
-                }
-            },
-            "rmdir" => {
-                if cmds.len() == 1 {
-                    print_failed("Error: rmdir: no directory specified");
-                    continue;
-                }
-                if cmds.len() >= 3 {
-                    print_failed("Error: rmdir: too many arguments");
-                    continue;
-                }
-                let file_name = cmds[1].as_ref();
-                if let Err(err) = rmdir(config, true, file_name) {
-                    print_error(err);
-                }
-            }
-            "getuid" => {
-                if cmds.len() != 1 {
-                    print_failed("Error: getuid: too many arguments");
-                    continue;
-                }
-                if let Err(err) = getuid(config) {
-                    print_error(err);
-                }
-            }
-            "getgid" => {
-                if cmds.len() != 1 {
-                    print_failed("Error: getgid: too many arguments");
-                    continue;
-                }
-                if let Err(err) = getgid(config) {
-                    print_error(err);
-                }
-            }
-            "portscan" => {
-                if cmds.len() != 1 {
-                    print_failed("Error: portscan: too many arguments");
-                    continue;
-                }
-                if let Err(err) = portscan(config) {
-                    print_error(err);
-                }
-            }
-            "netcat" => {
-                if cmds.len() == 1 {
-                    print_failed("Error: netcat: no input file specified");
-                    continue;
-                }
-                if cmds.len() == 2 {
-                    print_failed("Error: netcat: no port specified");
-                    continue;
-                }
-                if cmds.len() >= 4 {
-                    print_failed("Error: netcat: too many arguments");
-                    continue;
-                }
-                let input_file_name = cmds[1].as_ref();
-                let data_result = read_bytes_from_file(input_file_name);
-                if data_result.is_err() {
-                    let err = data_result.unwrap_err();
-                    print_error(err);
-                    continue;
-                }
-                let data = data_result.unwrap();
-                let port_str = cmds[2].as_ref();
-                let port_result = u16::from_str_radix(port_str, 10);
-                if port_result.is_err() {
-                    print_failed("Error: netcat: invalid port");
-                    continue;
-                }
-                let port = port_result.unwrap();
-                if let Err(err) = netcat(config, true, &data, port) {
-                    print_error(err);
-                }
-            }
-            "redis_shell" => {
-                let port = if cmds.len() == 1 {
-                    6379
-                } else {
-                    let port_str = cmds[1].as_ref();
-                    if let Ok(port) = u16::from_str_radix(port_str, 10) {
-                        port
+                    if cmds.len() >= 3 {
+                        print_failed("Error: cat: too many arguments");
+                        continue;
+                    }
+                    let file_name = cmds[1].as_ref();
+                    if let Err(err) = cat(config, true, file_name) {
+                        print_error(err);
+                    }
+                },
+                "cd" => {
+                    if cmds.len() >= 3 {
+                        print_failed("Error: cd: too many arguments");
+                        continue;
+                    }
+                    let file_name = if cmds.len() == 1 {
+                        "."
                     } else {
+                        cmds[1].as_ref()
+                    };
+                    if let Err(err) = cd(config, true, file_name) {
+                        print_error(err);
+                    }
+                },
+                "pwd" => {
+                    if cmds.len() >= 2 {
+                        print_failed("Error: pwd: too many arguments");
+                        continue;
+                    }
+                    if let Err(err) = pwd(config) {
+                        print_error(err);
+                    }
+                },
+                "download" => {
+                    if cmds.len() >= 3 {
+                        print_failed("Error: download: too many arguments");
+                        continue;
+                    }
+                    if cmds.len() == 1 {
+                        print_failed("Error: download: no file specified");
+                        continue;
+                    }
+                    let file_name = cmds[1].as_ref();
+                    if let Err(err) = download(config, file_name) {
+                        print_error(err);
+                    }
+                },
+                "upload" => {
+                    if cmds.len() >= 4 {
+                        print_failed("Error: download: too many arguments");
+                        continue;
+                    }
+                    if cmds.len() == 1 {
+                        print_failed("Error: upload: no file specified");
+                        continue;
+                    }
+                    let file_name = cmds[1].as_ref();
+                    let perm_option = if cmds.len() == 2 {
+                        Some(0o644)
+                    } else {
+                        let perm_str = cmds[2].as_ref();
+                        if let Ok(perm) = u16::from_str_radix(perm_str, 8) {
+                            Some(perm)
+                        } else {
+                            None
+                        }
+                    };
+                    if perm_option.is_none() {
+                        print_failed("Error: upload: invalid file permission");
+                        continue;
+                    }
+                    let perm = perm_option.unwrap();
+                    if let Err(err) = upload(config, file_name, perm) {
+                        print_error(err);
+                    }
+                },
+                "rm" => {
+                    if cmds.len() == 1 {
+                        print_failed("Error: rm: no file specified");
+                        continue;
+                    }
+                    if cmds.len() >= 3 {
+                        print_failed("Error: rm: too many arguments");
+                        continue;
+                    }
+                    let file_name = cmds[1].as_ref();
+                    if let Err(err) = rm(config, true, file_name) {
+                        print_error(err);
+                    }
+                }
+                "mv" => {
+                    if cmds.len() == 1 {
+                        print_failed("Error: mv: no source file specified");
+                        continue;
+                    }
+                    if cmds.len() == 2 {
+                        print_failed("Error: mv: no destination file specified");
+                        continue;
+                    }
+                    if cmds.len() >= 4 {
+                        print_failed("Error: mv: too many arguments");
+                        continue;
+                    }
+                    let source_file_name = cmds[1].as_ref();
+                    let dest_file_name = cmds[2].as_ref();
+                    if let Err(err) = mv(config, true, source_file_name, dest_file_name) {
+                        print_error(err);
+                    }
+                },
+                "cp" => {
+                    if cmds.len() == 1 {
+                        print_failed("Error: cp: no source file specified");
+                        continue;
+                    }
+                    if cmds.len() == 2 {
+                        print_failed("Error: cp: no destination file specified");
+                        continue;
+                    }
+                    if cmds.len() >= 5 {
+                        print_failed("Error: cp: too many arguments");
+                        continue;
+                    }
+                    let source_file_name = cmds[1].as_ref();
+                    let dest_file_name = cmds[2].as_ref();
+                    let perm_option = if cmds.len() == 3 {
+                        Some(0o644)
+                    } else {
+                        let perm_str = cmds[3].as_ref();
+                        if let Ok(perm) = u16::from_str_radix(perm_str, 8) {
+                            Some(perm)
+                        } else {
+                            None
+                        }
+                    };
+                    if perm_option.is_none() {
+                        print_failed("Error: cp: invalid file permission");
+                        continue;
+                    }
+                    let perm = perm_option.unwrap();
+                    if let Err(err) = cp(config, true, source_file_name, dest_file_name, perm) {
+                        print_error(err);
+                    }
+                }
+                "mkdir" => {
+                    if cmds.len() == 1 {
+                        print_failed("Error: mkdir: no directory specified");
+                        continue;
+                    }
+                    if cmds.len() >= 4 {
+                        print_failed("Error: mkdir: too many arguments");
+                        continue;
+                    }
+                    let file_name = cmds[1].as_ref();
+                    let perm_option = if cmds.len() == 2 {
+                        Some(0o755)
+                    } else {
+                        let perm_str = cmds[2].as_ref();
+                        if let Ok(perm) = u16::from_str_radix(perm_str, 8) {
+                            Some(perm)
+                        } else {
+                            None
+                        }
+                    };
+                    if perm_option.is_none() {
+                        print_failed("Error: mkdir: invalid directory permission");
+                        continue;
+                    }
+                    let perm = perm_option.unwrap();
+                    if let Err(err) = mkdir(config, true, file_name, perm) {
+                        print_error(err);
+                    }
+                },
+                "rmdir" => {
+                    if cmds.len() == 1 {
+                        print_failed("Error: rmdir: no directory specified");
+                        continue;
+                    }
+                    if cmds.len() >= 3 {
+                        print_failed("Error: rmdir: too many arguments");
+                        continue;
+                    }
+                    let file_name = cmds[1].as_ref();
+                    if let Err(err) = rmdir(config, true, file_name) {
+                        print_error(err);
+                    }
+                }
+                "getuid" => {
+                    if cmds.len() != 1 {
+                        print_failed("Error: getuid: too many arguments");
+                        continue;
+                    }
+                    if let Err(err) = getuid(config) {
+                        print_error(err);
+                    }
+                }
+                "getgid" => {
+                    if cmds.len() != 1 {
+                        print_failed("Error: getgid: too many arguments");
+                        continue;
+                    }
+                    if let Err(err) = getgid(config) {
+                        print_error(err);
+                    }
+                }
+                "portscan" => {
+                    if cmds.len() != 1 {
+                        print_failed("Error: portscan: too many arguments");
+                        continue;
+                    }
+                    if let Err(err) = portscan(config) {
+                        print_error(err);
+                    }
+                }
+                "netcat" => {
+                    if cmds.len() == 1 {
+                        print_failed("Error: netcat: no input file specified");
+                        continue;
+                    }
+                    if cmds.len() == 2 {
+                        print_failed("Error: netcat: no port specified");
+                        continue;
+                    }
+                    if cmds.len() >= 4 {
+                        print_failed("Error: netcat: too many arguments");
+                        continue;
+                    }
+                    let input_file_name = cmds[1].as_ref();
+                    let data_result = read_bytes_from_file(input_file_name);
+                    if data_result.is_err() {
+                        let err = data_result.unwrap_err();
+                        print_error(err);
+                        continue;
+                    }
+                    let data = data_result.unwrap();
+                    let port_str = cmds[2].as_ref();
+                    let port_result = u16::from_str_radix(port_str, 10);
+                    if port_result.is_err() {
+                        print_failed("Error: netcat: invalid port");
+                        continue;
+                    }
+                    let port = port_result.unwrap();
+                    if let Err(err) = netcat(config, true, &data, port) {
+                        print_error(err);
+                    }
+                }
+                "redis-cli" => {
+                    let port = if cmds.len() == 1 {
                         6379
-                    }
-                };
-                if let Err(err) = redis(config, port) {
-                    print_error(err);
-                }
-            }
-            "http_shell" => {
-                let port = if cmds.len() == 1 {
-                    80
-                } else {
-                    let port_str = cmds[1].as_ref();
-                    if let Ok(port) = u16::from_str_radix(port_str, 10) {
-                        port
                     } else {
-                        80
+                        let port_str = cmds[1].as_ref();
+                        if let Ok(port) = u16::from_str_radix(port_str, 10) {
+                            port
+                        } else {
+                            6379
+                        }
+                    };
+                    if let Err(err) = redis(config, port) {
+                        print_error(err);
                     }
-                };
-                if let Err(err) = http(config, port) {
-                    print_error(err);
                 }
-            }
-            "exit" | "quit" => {
-                if let Ok(want_exit) = exit() {
-                    if want_exit {
+                "http-shell" => {
+                    let port = if cmds.len() == 1 {
+                        80
+                    } else {
+                        let port_str = cmds[1].as_ref();
+                        if let Ok(port) = u16::from_str_radix(port_str, 10) {
+                            port
+                        } else {
+                            80
+                        }
+                    };
+                    if let Err(err) = http(config, port) {
+                        print_error(err);
+                    }
+                }
+                "exit" | "quit" => {
+                    if let Ok(want_exit) = exit() {
+                        if want_exit {
+                            close_connection(config);
+                            break;
+                        }
+                    } else {
+                        /* Close the connection in case things go wrong */
+                        /* Probably not a good idea here, but I'll fix this later */
                         close_connection(config);
                         break;
                     }
-                } else {
-                    /* Close the connection in case things go wrong */
-                    /* Probably not a good idea here, but I'll fix this later */
-                    close_connection(config);
-                    break;
                 }
-            }
-            _ => {
-                let message = format!("Unknown command '{}'", command);
-                print_failed(&message);
-                help();
-            }
-        };
+                _ => {
+                    let message = format!("Unknown command '{}'", command);
+                    print_failed(&message);
+                    help();
+                }
+            };
+        } else {
+            print_failed("Invalid input: parse error");
+        }
     }
 
     println!("");
