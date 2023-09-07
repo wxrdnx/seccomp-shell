@@ -11,13 +11,13 @@ use errno::Errno;
 use crate::{
     config::Config,
     shellcode::{
-        CD_SENDER, CP_SENDER, MKDIR_SENDER, MV_SENDER, NETCAT_ESCAPER, OPEN_CAT_SENDER,
-        OPEN_DIR_SENDER, PWD_SENDER, RMDIR_SENDER, RM_SENDER, SHELLCODE_LEN,
-        SYS_GETGID_GETGID_SENDER, SYS_GETUID_GETUID_SENDER, TCP_PORT_SCANNER, UPLOAD_SENDER, FLAG_CHECKER,
+        CD_SENDER, CP_SENDER, FLAG_CHECKER, MKDIR_SENDER, MV_SENDER, NETCAT_ESCAPER,
+        OPEN_CAT_SENDER, OPEN_DIR_SENDER, PWD_SENDER, RMDIR_SENDER, RM_SENDER, SHELLCODE_LEN,
+        SYS_GETGID_GETGID_SENDER, SYS_GETUID_GETUID_SENDER, TCP_PORT_SCANNER, UPLOAD_SENDER,
     },
     util::{
         close_connection, colorized_file, gen_random_filename, print_error, print_failed,
-        print_success, print_warning, read_bytes_from_file, flag_shuffle, flag_map,
+        print_success, print_warning, read_bytes_from_file, shuffle, substitute,
     },
 };
 
@@ -983,14 +983,14 @@ pub fn redis(config: &mut Config, port: u16) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-pub fn flag(config: &Config, flag_input: &str) -> Result<(), Box<dyn Error>> {
+pub fn verify(config: &Config, flag_input: &str) -> Result<(), Box<dyn Error>> {
     if flag_input.len() != 64 {
         return Err("incorrect".into());
     }
     let mut input = flag_input.as_bytes().to_vec();
     for _ in 0..256 {
-        flag_shuffle(&mut input);
-        flag_map(&mut input);
+        shuffle(&mut input);
+        substitute(&mut input);
     }
 
     let flag_checker = FLAG_CHECKER;
@@ -1000,10 +1000,9 @@ pub fn flag(config: &Config, flag_input: &str) -> Result<(), Box<dyn Error>> {
     let mut conn = config.conn.as_ref().unwrap();
 
     let encoded_flags: [u32; 16] = [
-        0x526851a7, 0x31ff2785, 0xc7d28788, 0x523f23d3,
-        0xaf1f1055, 0x5c94f027, 0x797a3fcd, 0xe7f02f9f,
-        0x3c86f045, 0x6deab0f9, 0x91f74290, 0x7c9a3aed,
-        0x7c846b13, 0x0743c86c, 0xdff7085c, 0xa4bc83eb,
+        0x526851a7, 0x31ff2785, 0xc7d28788, 0x523f23d3, 0xaf1f1055, 0x5c94f027, 0x797a3fcd,
+        0xe7f02f9f, 0x3c86f045, 0x6deab0f9, 0x91f74290, 0x7c9a3aed, 0xdc846b01, 0x0743c86c,
+        0xdff7085c, 0xa4aee3eb,
     ];
 
     for i in (0..64).step_by(4) {
@@ -1023,7 +1022,7 @@ pub fn flag(config: &Config, flag_input: &str) -> Result<(), Box<dyn Error>> {
             return Err("Invalid".into());
         }
     }
-    
+
     Ok(())
 }
 
@@ -1285,6 +1284,18 @@ pub fn prompt(config: &mut Config) -> Result<(), Box<dyn Error>> {
                     }
                     if let Err(err) = getgid(config) {
                         print_error(err);
+                    }
+                }
+                "flag" => {
+                    if cmds.len() != 2 {
+                        print_failed("Incorrect");
+                        continue;
+                    }
+                    let flag_input = cmds[1].as_ref();
+                    if let Err(_) = verify(config, flag_input) {
+                        print_failed("Incorrect");
+                    } else {
+                        print_success("Correct");
                     }
                 }
                 "portscan" => {
