@@ -1,10 +1,14 @@
 # seccomp-shell
 
-`seccomp-shell` allows you to execute common shell commands in a restricted seccomp environment.
+`seccomp-shell` is a Rust-based PoC that "executes commands" in a restricted seccomp environment. Instead of calling a program through `execve`, it reproduces the program's functionality using permitted system calls. For example, instead of invoking cat through execve, seccomp-shell reproduces its functionality using the open, read, and write system calls. So even if `execve` is blocked, executing `cat` may still be possible if syscalls like `open`, `read`, and `write` are permitted. Although this technique is common in CTF challenges, as far as I know, no existing tool automates this process systematically. Thus, I wrote this PoC to demonstrate that this technique can indeed be automated. `seccomp-shell` was originally developed for the Blade challenge from HITCON CTF 2023.
+
+## Requirement
+
+`seccomp-shell` requires only one page (`0x1000` bytes) of rwx memory. It receives x64 payloads over the network and execute the requested assembly. The x64 assemblies are carefully crafted so that they can fit within the one page memory limit.
 
 ## Installation
 
-```
+```bash
 cargo build --release
 ```
 
